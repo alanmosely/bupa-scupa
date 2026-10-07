@@ -1,0 +1,20 @@
+name: Bug report
+description: Report a reproducible problem using invented data
+labels: bug
+body:
+  - type: markdown
+    attributes:
+      value: Do not attach health records, names, claim references, statements, portal captures, cookies or credentials. Report security issues privately using SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: SCUPA version and Windows version
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce with invented data
+      description: Describe what you expected and what happened. Use synthetic examples only.
+    validations:
+      required: true
