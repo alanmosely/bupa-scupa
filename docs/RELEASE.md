@@ -56,6 +56,12 @@ Attach these assets to the release:
 - `bupa-scupa-0.1.0-source.zip`: corresponding application source.
 - `SHA256SUMS.txt`: checksums of the final release files.
 
+Also upload an identical copy of the versioned EXE named `bupa-scupa-x64.exe`
+on every release. Verify its SHA-256 matches the versioned EXE. Keep both assets
+so existing version-specific links continue to work. The README's permanent
+direct download uses `/releases/latest/download/bupa-scupa-x64.exe`; verify it
+after marking a stable release as latest.
+
 Use [RELEASE_NOTES_0.1.0.md](RELEASE_NOTES_0.1.0.md) for the release notes. Record
 actual tested platforms, limitations and signature status. Add and verify direct
 download links in the README and release notes after uploading; do not present

@@ -12,8 +12,8 @@ Your PDFs and claim history stay in an archive on your computer.
 
 Requires Windows 10/11 x64 and Microsoft Edge or Google Chrome.
 
-[Download the latest release](https://github.com/alanmosely/bupa-scupa/releases/latest)
-as a portable EXE or ZIP.
+[Download the portable EXE](https://github.com/alanmosely/bupa-scupa/releases/latest/download/bupa-scupa-x64.exe)
+or [get the ZIP from the latest release](https://github.com/alanmosely/bupa-scupa/releases/latest).
 Open the EXE, or extract the ZIP and run `BUPA SCUPA.exe`.
 
 1. Choose an archive folder or keep the default `Documents/BUPA SCUPA`.
