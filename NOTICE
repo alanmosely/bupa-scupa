@@ -1,0 +1,31 @@
+BUPA SCUPA — BUPA Simple Claims Utility & Personal Archive
+Copyright (C) 2026 BUPA SCUPA contributors
+
+This software is licensed under GPL-3.0-or-later. It is distributed without
+warranty. See LICENSE. This project is independent of Bupa. Bupa and Bupa Global
+are trademarks of their respective owners. No Bupa logos or brand assets are used.
+
+The Windows release includes Xpdf pdftotext 4.06 by Glyph & Cog, LLC, built from
+unmodified source with optional libraries disabled. It is distributed under GPL v3.
+Xpdf COPYING, COPYING3, README and the unmodified upstream source archive
+xpdf-4.06.tar.gz accompany the binary in resources/xpdf. The official source is
+https://www.xpdfreader.com/download.html. The executable's distribution notices
+and build instructions are authoritative. Preserve them when redistributing.
+
+resources/xpdf/BUILD.json identifies the source and binary hashes, compiler and
+SDK used for this release. scripts/build-pdf.ps1 in the accompanying SCUPA source
+archive is the build recipe. The target links Xpdf's goo/fofi libraries and the
+Microsoft C/C++ runtime; it does not link Qt, FreeType, libpaper, lcms or fontconfig.
+
+Electron, Chromium, Playwright and their dependencies retain their own licenses.
+Electron's LICENSE and LICENSES.chromium.html ship with the desktop runtime.
+This software uses libraries from the FFmpeg project under LGPL-2.1-or-later.
+The replaceable ffmpeg.dll is part of Electron. Its corresponding source,
+Electron patches, Opus dependency, build materials, LGPL text and provenance
+are included in resources/ffmpeg; read that directory's README.md for build
+and replacement instructions. SCUPA does not restrict reverse engineering or
+modification of that library. Preserve these materials when redistributing.
+
+Sync uses separately installed Edge or Chrome; no sync browser is bundled.
+Node dependencies retain package licenses inside app.asar. A source release
+includes the lockfile and build recipe.

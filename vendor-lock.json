@@ -1,0 +1,97 @@
+{
+  "xpdf-tools-win-4.06.zip": "2b6ca45da794e7854a6468fd6c8063fde62701f001ce03fa4f603eab7e15a0b6",
+  "xpdf-4.06.tar.gz": "1c38f527c46caee0f712386d42a885b96a31ed9ce11904e872559859894d137e",
+  "microsoft.windows.sdk.cpp.10.0.26100.9169.nupkg": "475269434dcd808a67853773272f972c3229c0e10c3ddc821290e70cc0f6904d",
+  "microsoft.windows.sdk.cpp.x64.10.0.26100.9169.nupkg": "df6226a051e320942abfbd57848b43d18772996ecd66beadad240f2a56ed2f7b",
+  "electronFfmpeg": {
+    "version": "44.5.1",
+    "chromium": "152.0.7977.130",
+    "revision": "2b68d2babae73714846961fb0ee47e3b3d2e39a9",
+    "nasm": "525a09a813be0f75b646ee93fc2a31c27b87d722",
+    "platform": "win32-x64",
+    "runtimeArchive": {
+      "name": "electron-v44.5.1-win32-x64.zip",
+      "sha256": "9b382492dcfee91f8f9e92c91f7972550a1b95d2299cac72279dab33a600d7db"
+    },
+    "binarySha256": "7728490eb079c19b17baeff2b6590c976f6a928b3c17923aeb4fcf1f1f31d299",
+    "sources": [
+      {
+        "name": "ffmpeg-2b68d2babae73714846961fb0ee47e3b3d2e39a9.tar.gz",
+        "url": "https://chromium.googlesource.com/chromium/third_party/ffmpeg/+archive/2b68d2babae73714846961fb0ee47e3b3d2e39a9.tar.gz",
+        "sha256": "1d6b66bbf18335125910fe4676053a521ffaaeeb6dacc8a7d397626907b028b2",
+        "checkout": "src/third_party/ffmpeg"
+      },
+      {
+        "name": "electron-44.5.1.tar.gz",
+        "url": "https://codeload.github.com/electron/electron/tar.gz/refs/tags/v44.5.1",
+        "sha256": "798e7647950ce10d6715892b5ee3c05af71d7f785dddb23d87c6f26f18b37363",
+        "checkout": "src/electron"
+      },
+      {
+        "name": "chromium-152.0.7977.130-build.tar.gz",
+        "url": "https://chromium.googlesource.com/chromium/src/+archive/152.0.7977.130/build.tar.gz",
+        "sha256": "0a4a5a131835e816cd5434f04490dce3f9b6f2368ee0ec6aca51f480993582f5",
+        "checkout": "src/build"
+      },
+      {
+        "name": "chromium-152.0.7977.130-third_party-opus.tar.gz",
+        "url": "https://chromium.googlesource.com/chromium/src/+archive/152.0.7977.130/third_party/opus.tar.gz",
+        "sha256": "1f798c2d76c7ae72021dd76cf28ef87174d006aebb28ddd2f9ee08d0b4023f81",
+        "checkout": "src/third_party/opus"
+      },
+      {
+        "name": "chromium-152.0.7977.130-tools-generate_stubs.tar.gz",
+        "url": "https://chromium.googlesource.com/chromium/src/+archive/152.0.7977.130/tools/generate_stubs.tar.gz",
+        "sha256": "d9a63f40b9f3d1486d38b66af4b9d4c622260228dfef77b74d48dc6b273ead64",
+        "checkout": "src/tools/generate_stubs"
+      },
+      {
+        "name": "chromium-152.0.7977.130-tools-clang.tar.gz",
+        "url": "https://chromium.googlesource.com/chromium/src/+archive/152.0.7977.130/tools/clang.tar.gz",
+        "sha256": "04dd580f8ab57a638336d1a7d2f8aced14f88aae997f8c2239f97830e027c264",
+        "checkout": "src/tools/clang"
+      },
+      {
+        "name": "chromium-152.0.7977.130-buildtools.tar.gz",
+        "url": "https://chromium.googlesource.com/chromium/src/+archive/152.0.7977.130/buildtools.tar.gz",
+        "sha256": "760ed5d4fb224fd87377e0b0c5462416eac2ad55909c84f7f2a5a5f09cfe22c8",
+        "checkout": "src/buildtools"
+      },
+      {
+        "name": "nasm-525a09a813be0f75b646ee93fc2a31c27b87d722.tar.gz",
+        "url": "https://chromium.googlesource.com/chromium/deps/nasm/+archive/525a09a813be0f75b646ee93fc2a31c27b87d722.tar.gz",
+        "sha256": "4172ec3d0f6a0ba1d0728b8c2feb308a9ebd6b31d565a8ad1757ab39bdc9b21b",
+        "checkout": "src/third_party/nasm"
+      },
+      {
+        "name": "chromium-DEPS",
+        "url": "https://raw.githubusercontent.com/chromium/chromium/152.0.7977.130/DEPS",
+        "sha256": "7c2fd934009eb6f3f936c66853f01307e54175ff1fc19a49cdeee5fa43d498ab",
+        "checkout": "src/DEPS"
+      },
+      {
+        "name": "chromium-LICENSE",
+        "url": "https://raw.githubusercontent.com/chromium/chromium/152.0.7977.130/LICENSE",
+        "sha256": "368cca1106be99d39ecd32a38d8305585d802a475effb66380b91ffc9bcf709b",
+        "checkout": "src/LICENSE"
+      },
+      {
+        "name": "chromium-dot-gn",
+        "url": "https://raw.githubusercontent.com/chromium/chromium/152.0.7977.130/.gn",
+        "sha256": "b17d58c4d7d648fab31108af33e71a4dc6725667bc2df665a9ae8456683eba64",
+        "checkout": "src/.gn"
+      },
+      {
+        "name": "chromium-BUILD.gn",
+        "url": "https://raw.githubusercontent.com/chromium/chromium/152.0.7977.130/BUILD.gn",
+        "sha256": "3a975bdf5a09d3b652920bdd27cb68a0be8e51a5706b2710715f566c50f6b10c",
+        "checkout": "src/BUILD.gn"
+      },
+      {
+        "name": "electron-SHASUMS256.txt",
+        "url": "https://github.com/electron/electron/releases/download/v44.5.1/SHASUMS256.txt",
+        "sha256": "8cfa7460b2aaac1812bfeed3c6957d14ad384b9f31ae0407ba5e64bb6b43ec3e"
+      }
+    ]
+  }
+}
