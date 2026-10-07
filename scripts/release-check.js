@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import yauzl from 'yauzl';
-import asar from '@electron/asar';
+import * as asar from '@electron/asar';
 import { files, checkProject, checkContent } from './check.js';
 import { VERSION } from '../src/version.js';
 import { verifyFfmpegSource } from './ffmpeg-source.js';
