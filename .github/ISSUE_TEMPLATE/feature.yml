@@ -1,0 +1,21 @@
+name: Feature request
+description: Suggest an improvement to SCUPA
+labels: enhancement
+body:
+  - type: markdown
+    attributes:
+      value: Use fictional examples. Do not include health records, account details or portal captures.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe what you are trying to do and what gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested improvement
+      description: Describe the behaviour you would like, including any alternatives you considered.
+    validations:
+      required: true

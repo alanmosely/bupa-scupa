@@ -5,6 +5,17 @@ Use Node.js 22.13+ and npm on Windows x64. Set up a checkout with `npm ci` and
 `npm run vendor -- --pdf-only` provisions the pinned PDF reader without Electron.
 CI requires the PDF extraction and cancellation tests to run.
 
+## Making a contribution
+
+Bug fixes, documentation, accessibility improvements and synthetic statement
+fixtures are welcome. Check existing [issues](https://github.com/alanmosely/bupa-scupa/issues)
+before opening a new one, and discuss larger changes before implementing them.
+For help using SCUPA, use [Discussions](https://github.com/alanmosely/bupa-scupa/discussions).
+
+Fork the repository, create a branch from `main`, and keep each pull request focused
+on one change. Explain the problem, the resulting behaviour and how you tested it.
+Link the relevant issue and update documentation when behaviour changes.
+
 ## Checks
 
 ```powershell
