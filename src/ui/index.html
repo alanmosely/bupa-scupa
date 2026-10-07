@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'"
+    />
+    <title>BUPA SCUPA</title>
+    <link rel="icon" type="image/svg+xml" href="clean-sweep.svg" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <img class="logo" src="clean-sweep.svg" width="56" height="56" alt="" />
+        <div>
+          <h1>BUPA SCUPA</h1>
+          <p>Simple Claims Utility &amp; Personal Archive</p>
+        </div>
+      </div>
+    </header>
+    <main>
+      <section class="hero">
+        <div class="sync-box">
+          <button id="sync" class="primary">
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+            >
+              <path d="M21 3v5h-5M3 21v-5h5" />
+              <path d="M3 12a9 9 0 0 1 15.36-6.36L21 8M21 12a9 9 0 0 1-15.36 6.36L3 16" />
+            </svg>
+            Sync with Bupa
+          </button>
+          <p id="last-sync">Sign in to Bupa to update your archive.</p>
+        </div>
+      </section>
+      <section id="setup" class="panel" hidden>
+        <h3>Start with your Bupa login</h3>
+        <p>
+          Click Sync with Bupa above. Sign in yourself, including MFA. SCUPA will try to read your
+          household from MembersWorld and ask you to check the names before saving them.
+        </p>
+        <details>
+          <summary>Manual setup if automatic discovery is unavailable</summary>
+          <p>
+            Enter the account holder first, then each dependant, one name per line. Use the exact
+            portal names.
+          </p>
+          <label for="names">Household members</label
+          ><textarea
+            id="names"
+            rows="4"
+            placeholder="Account holder’s portal name&#10;Dependant’s portal name"
+          ></textarea>
+          <button id="save-setup">Save household manually</button>
+        </details>
+        <div class="privacy-note">
+          <strong>Your records will be saved here</strong>
+          <p id="setup-archive-path" class="file-path"></p>
+          <p>
+            Names, medical statements and payment details are saved as readable files. SCUPA does
+            not encrypt them. A folder managed by OneDrive or another backup service may be uploaded
+            by that service.
+          </p>
+          <p>Choose a private folder you control. SCUPA has no analytics or AI uploads.</p>
+        </div>
+        <div class="actions">
+          <button id="choose-folder">Choose archive folder</button>
+        </div>
+      </section>
+      <section id="progress" class="progress-panel" role="status" aria-live="polite" hidden>
+        <div>
+          <strong id="progress-title">Getting ready…</strong>
+          <p id="progress-detail"></p>
+        </div>
+        <button id="cancel">Cancel sync</button>
+      </section>
+      <section id="message" role="status" aria-live="polite" hidden></section>
+      <div id="recovery-actions" class="actions" hidden>
+        <button id="error-help">Open Archive help</button>
+      </div>
+      <section id="dashboard" hidden>
+        <div class="stats">
+          <article>
+            <p>Total claims</p>
+            <strong id="claim-count">0</strong><small>All household members</small>
+          </article>
+          <article>
+            <p>Awaiting statements</p>
+            <strong id="awaiting-count">0</strong><small>Rechecked at every sync</small>
+          </article>
+          <article class="wide">
+            <p>Total paid</p>
+            <strong id="paid-total">—</strong><small>Each currency shown separately</small>
+          </article>
+        </div>
+        <section class="panel records">
+          <div class="section-title">
+            <div>
+              <h3>Claims</h3>
+              <p id="result-count">Your permanent local archive</p>
+            </div>
+            <button id="export">Export CSV</button>
+          </div>
+          <div class="filters">
+            <label
+              >Search claims<input
+                id="search"
+                type="search"
+                placeholder="Provider, reference or status" /></label
+            ><label
+              >Member<select id="member">
+                <option value="">Everyone</option>
+              </select></label
+            ><label
+              >Status<select id="status">
+                <option value="">All claims</option>
+                <option value="awaiting">Awaiting a statement</option>
+                <option value="partial">Partially paid</option>
+                <option value="rejected">Rejected</option>
+              </select></label
+            >
+          </div>
+          <div class="table-scroll">
+            <table aria-label="Household claims">
+              <thead>
+                <tr>
+                  <th scope="col">Member</th>
+                  <th scope="col">Provider</th>
+                  <th scope="col" class="numeric">Claimed</th>
+                  <th scope="col" class="numeric">Paid</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody id="claims"></tbody>
+            </table>
+          </div>
+          <p id="empty" class="empty">Your claims will appear here after your first sync.</p>
+        </section>
+        <section class="archive-line">
+          <div>
+            <strong>Archive location</strong>
+            <p id="archive-path"></p>
+          </div>
+          <div class="actions">
+            <button id="open-folder">Open folder</button>
+            <details class="archive-settings">
+              <summary>Archive options</summary>
+              <div class="archive-options">
+                <button id="change-folder">Choose another archive</button>
+                <button id="edit-household">Edit household names</button>
+                <button id="reparse">Recheck saved PDFs</button>
+                <button
+                  id="full-sync"
+                  title="Sign in and re-download every claim still available in Bupa’s 36-month window"
+                >
+                  Refresh all claims
+                </button>
+                <button id="archive-help">Archive help</button>
+              </div>
+            </details>
+          </div>
+        </section>
+      </section>
+      <footer>
+        <p>
+          Independent utility for Bupa Global MembersWorld. Not affiliated with or endorsed by Bupa.
+        </p>
+        <div class="footer-meta">
+          <button id="privacy">Privacy and storage</button>
+          <span id="version"></span>
+        </div>
+      </footer>
+    </main>
+    <dialog id="confirmation" aria-labelledby="confirm-name">
+      <form method="dialog">
+        <p class="eyebrow">CHECK BEFORE IMPORTING</p>
+        <h3 id="confirm-name"></h3>
+        <p id="confirm-instructions">
+          Look at the Bupa browser window and check that the claims belong to this member. Do not
+          confirm if the member is wrong or unclear.
+        </p>
+        <p id="confirm-count"></p>
+        <div class="actions">
+          <button value="cancel">Stop sync</button
+          ><button id="confirm-accept" value="accept" class="primary">
+            Yes, this is the right member
+          </button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="household-editor" aria-labelledby="household-title">
+      <h3 id="household-title">Correct household names</h3>
+      <p>
+        Use each person’s name exactly as it appears in MembersWorld. Keep every name attached to
+        the same person. Changed names must be confirmed at the next sync.
+      </p>
+      <form id="household-form">
+        <div id="household-fields"></div>
+        <p id="household-error" class="error-text" role="alert" hidden></p>
+        <div class="actions">
+          <button id="close-household" type="button">Cancel</button
+          ><button id="save-household" class="primary" type="submit">Save names</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="help-dialog" aria-labelledby="help-title">
+      <h3 id="help-title">Archive help</h3>
+      <p id="help-lock" role="status"></p>
+      <button id="recover-lock" hidden>Recover interrupted run</button>
+      <h4>Statements needing attention</h4>
+      <p id="help-summary"></p>
+      <ul id="help-issues"></ul>
+      <p>
+        Check these PDFs in your archive. If a statement format has changed, keep the files and try
+        a newer SCUPA release. Your master is kept unchanged when parsing fails.
+      </p>
+      <p>
+        Keep diagnostics and statements private. Share a synthetic example when reporting an issue.
+      </p>
+      <details>
+        <summary>Backups and recovery</summary>
+        <p>
+          Close SCUPA before restoring a backup. Keep a copy of the current master, then restore a
+          chosen file from master/backups to master/claims.csv. Back up the entire archive,
+          including PDFs and household settings.
+        </p>
+      </details>
+      <div class="actions">
+        <button id="help-open-folder">Open archive folder</button
+        ><button id="close-help">Close</button>
+      </div>
+    </dialog>
+    <dialog id="privacy-dialog" aria-labelledby="privacy-title">
+      <h3 id="privacy-title">Your privacy and storage</h3>
+      <p id="privacy-path" class="file-path"></p>
+      <p>
+        SCUPA keeps names, health statements, payment details, backups and exports as readable
+        files. It does not encrypt the archive. Protect the folder using your device’s account
+        controls, encryption and backups.
+      </p>
+      <p>
+        Cloud backup or sync services may upload a folder they manage. CSV exports and agent
+        responses also contain personal information.
+      </p>
+      <p>
+        SCUPA has no built-in analytics or AI uploads. Sync connects to Bupa’s website and the
+        services it loads. Passwords and MFA stay in the manual browser login flow. Temporary
+        browser files may remain after a crash.
+      </p>
+      <p>
+        If you give an AI assistant access to your records, its service may receive them. Removing
+        the app leaves your archive in place.
+      </p>
+      <div class="actions"><button id="close-privacy">Close</button></div>
+    </dialog>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
