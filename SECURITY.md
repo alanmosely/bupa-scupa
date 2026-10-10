@@ -5,7 +5,7 @@ This reporting channel is enabled. Do not post exploit details, health records,
 credentials or portal captures in public issues. Repository maintainers receive
 private reports.
 
-This preview has not had an independent security audit. It handles sensitive
+SCUPA has not had an independent security audit. It handles sensitive
 health documents. Keep the OS and SCUPA updated and use a private archive folder.
 
 The renderer is sandboxed, has no Node integration, uses context isolation and a

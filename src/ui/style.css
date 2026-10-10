@@ -254,6 +254,28 @@ textarea {
   background: #fcf1ee;
   border-color: #e8cbc3;
 }
+.change-summary {
+  padding: 14px 18px;
+  font-size: 13px;
+}
+.change-summary summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.change-summary > ul {
+  max-height: 280px;
+  overflow-y: auto;
+  padding-left: 20px;
+  margin: 14px 0 0;
+}
+.change-summary li {
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+}
+.change-summary p {
+  margin-top: 4px;
+  color: var(--muted);
+}
 .stats {
   display: grid;
   grid-template-columns: 1fr 1fr 1.5fr;

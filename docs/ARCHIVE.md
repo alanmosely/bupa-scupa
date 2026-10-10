@@ -32,6 +32,12 @@ current files for every claim still available in Bupa's 36-month window. This
 also catches reassessments outside the normal 14-day incremental overlap.
 **Recheck saved PDFs** works offline and does not fetch portal changes.
 
+After a successful sync or recheck, expand **View changes** to see added claims
+and the previous and new values for updated claims. Claimed and paid amounts use
+their own currencies. The summary covers the latest run in this window and clears
+when another run starts or you change archives. Change reports are also saved in
+`reports/`.
+
 In the master CSV, `currency` describes `claimed` and `paid_currency` describes
 `paid`. Earlier preview CSVs with one currency remain readable. Their header is
 upgraded on the next successful merge, with the original CSV backed up first;

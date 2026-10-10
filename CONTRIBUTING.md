@@ -30,6 +30,11 @@ when changing navigation or discovery. `npm run check` enforces formatting, lint
 JavaScript types and source privacy. It inspects tracked paths and staged blobs
 as well as the working copy. Use `npm run format` before submitting changes.
 
+Pull requests affecting application code, tests, dependencies or packaging also
+run Windows validation: desktop and synthetic portal tests, packaged and portable
+agent checks, and release artifact checks. Documentation-only changes use the
+standard Checks workflow. Windows validation can also be run manually.
+
 Use exact dependency versions and include `package-lock.json` updates. Read
 [the architecture guide](docs/ARCHITECTURE.md) before changing an operation.
 Use shared model, status and version definitions.

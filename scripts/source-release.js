@@ -19,9 +19,15 @@ await new Promise((resolve, reject) => {
   zip.end();
 });
 console.log(output);
-const releases = fs
-  .readdirSync('dist')
-  .filter((f) => f.startsWith(`bupa-scupa-${pkg.version}-`) && /\.(?:exe|zip)$/.test(f));
+const executable = `bupa-scupa-${pkg.version}-x64.exe`;
+const alias = 'bupa-scupa-x64.exe';
+fs.copyFileSync(path.join('dist', executable), path.join('dist', alias));
+const releases = [
+  executable,
+  alias,
+  `bupa-scupa-${pkg.version}-x64.zip`,
+  `bupa-scupa-${pkg.version}-source.zip`,
+];
 const lines = releases.map(
   (file) =>
     crypto

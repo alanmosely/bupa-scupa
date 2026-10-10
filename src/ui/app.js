@@ -138,15 +138,73 @@ async function refresh() {
   data = await call('snapshot');
   render();
 }
+function clearChanges() {
+  $('changes').hidden = true;
+  $('changes').open = false;
+  $('changes-list').replaceChildren();
+}
+/** @param {ParseResult} result @param {Snapshot['rows']} previousRows */
+function renderChanges(result, previousRows) {
+  clearChanges();
+  const { added, updated } = result.changes;
+  const append = (kind, member, ref, descriptions) => {
+    const item = document.createElement('li');
+    const title = document.createElement('strong');
+    title.textContent = `${kind} · ${data.members[member]?.displayName || member} · ${ref}`;
+    item.append(title);
+    for (const description of descriptions) {
+      const line = document.createElement('p');
+      line.textContent = description;
+      item.append(line);
+    }
+    $('changes-list').append(item);
+  };
+  for (const row of added) {
+    append('Added', row.member, row.claim_ref, [
+      [row.provider, row.status].filter(Boolean).join(' · '),
+      `Claimed ${amount(row.currency, row.claimed)} · Paid ${amount(row.paid_currency, row.paid)}`,
+    ]);
+  }
+  for (const change of updated) {
+    const before =
+      previousRows.find(
+        (row) => row.member === change.member && row.claim_ref === change.claim_ref,
+      ) || {};
+    const after = {
+      ...before,
+      ...Object.fromEntries(change.diffs.map(({ field, to }) => [field, to])),
+    };
+    const value = (field, raw, row) =>
+      field === 'paid' || field === 'claimed'
+        ? amount(row[field === 'paid' ? 'paid_currency' : 'currency'], raw)
+        : raw || '—';
+    append(
+      'Updated',
+      change.member,
+      change.claim_ref,
+      change.diffs.map(({ field, from, to }) => {
+        const label = field.replaceAll('_', ' ');
+        return `${label[0].toUpperCase() + label.slice(1)}: ${value(field, from, before)} → ${value(field, to, after)}`;
+      }),
+    );
+  }
+  $('changes-title').textContent = `View changes (${added.length + updated.length})`;
+  $('changes').hidden = !added.length && !updated.length;
+}
 /** @template {'sync' | 'parse' | 'setup'} K @param {K} command @param {UiArgs<K>} args */
 async function operate(command, ...args) {
   if (busy) return;
+  clearChanges();
   message('');
   setBusy(true);
   $('progress-title').textContent = command === 'sync' ? 'Opening Bupa…' : 'Checking your records…';
   $('progress-detail').textContent = '';
+  const previousRows = data.rows;
+  /** @type {ParseResult | undefined} */
+  let changes;
   try {
     const result = await call(command, ...args);
+    if ('changes' in result) changes = result;
     message(
       'added' in result
         ? `Done. ${result.added} claims added, ${result.updated} updated.`
@@ -160,6 +218,7 @@ async function operate(command, ...args) {
       confirmPending = false;
     }
     await refresh().catch((e) => message(e.message, true));
+    if (changes) renderChanges(changes, previousRows);
     setBusy(false);
   }
 }
@@ -183,6 +242,7 @@ for (const id of /** @type {const} */ (['choose-folder', 'change-folder']))
   $(id).onclick = async () => {
     try {
       data = await call('folder');
+      clearChanges();
       render();
     } catch (e) {
       message(e.message, true);
@@ -233,7 +293,7 @@ $('confirmation').addEventListener('close', () => {
     );
   }
 });
-$('version').textContent = `Version ${VERSION} · Preview`;
+$('version').textContent = `Version ${VERSION}`;
 $('privacy').onclick = () => $('privacy-dialog').showModal();
 $('close-privacy').onclick = () => $('privacy-dialog').close();
 $('edit-household').onclick = () => {
@@ -262,6 +322,7 @@ $('household-form').onsubmit = async (event) => {
   }));
   try {
     data = await call('update-household', { edits });
+    clearChanges();
     render();
     $('household-editor').close();
     message('Household names saved. Please confirm corrected names in Bupa at your next sync.');

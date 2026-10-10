@@ -53,6 +53,9 @@ interface UiElements {
   'progress-detail': HTMLElement;
   cancel: HTMLButtonElement;
   message: HTMLElement;
+  changes: HTMLDetailsElement;
+  'changes-title': HTMLElement;
+  'changes-list': HTMLElement;
   'recovery-actions': HTMLElement;
   'error-help': HTMLButtonElement;
   dashboard: HTMLElement;
