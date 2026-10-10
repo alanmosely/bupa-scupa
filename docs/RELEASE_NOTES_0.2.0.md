@@ -19,6 +19,18 @@ help you keep track of claims between syncs.
 - Personal follow-ups and saved views are stored in private `workspace.json`.
   Back up the entire archive to preserve them.
 
+## Downloads
+
+- [Portable EXE](https://github.com/alanmosely/bupa-scupa/releases/download/v0.2.0/bupa-scupa-x64.exe)
+- [Application ZIP](https://github.com/alanmosely/bupa-scupa/releases/download/v0.2.0/bupa-scupa-0.2.0-x64.zip)
+- [Corresponding source](https://github.com/alanmosely/bupa-scupa/releases/download/v0.2.0/bupa-scupa-0.2.0-source.zip)
+- [SHA-256 checksums](https://github.com/alanmosely/bupa-scupa/releases/download/v0.2.0/SHA256SUMS.txt)
+
+Open the portable EXE, or extract the ZIP and run `BUPA SCUPA.exe`. The permanent
+[latest EXE link](https://github.com/alanmosely/bupa-scupa/releases/latest/download/bupa-scupa-x64.exe)
+provides this version once the release is published. Use the extracted ZIP for
+repeated agent commands.
+
 ## Validation and privacy
 
 Validation uses fictional claims and PDFs on Windows 11 x64 and the Windows

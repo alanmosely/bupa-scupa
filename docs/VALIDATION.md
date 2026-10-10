@@ -18,7 +18,7 @@ these changes.
 - Keyboard focus returns to the claim after its drawer closes. The public dashboard
   screenshot uses fictional records, a generic archive path and no text metadata.
 - The existing desktop smoke and synthetic portal/discovery workflows remain
-  covered. The release candidate also runs full Windows validation: packaged
+  covered. The release candidate passes full Windows validation: packaged
   desktop and browser checks, extracted and portable agent checks, cancellation,
   concurrent portable invocations and exact release artifact inspection.
 
