@@ -92,6 +92,7 @@
       "artifactName": "bupa-scupa-${version}-${arch}.${ext}"
     },
     "portable": {
+      "artifactName": "bupa-scupa-x64.exe",
       "requestExecutionLevel": "user",
       "unpackDirName": true
     },

@@ -52,18 +52,21 @@ procedures are optional future work.
 Tag the reviewed commit in [bupa-scupa](https://github.com/alanmosely/bupa-scupa).
 Attach these assets to the release:
 
-- `bupa-scupa-<version>-x64.exe`: portable app for double-click use.
+- `bupa-scupa-x64.exe`: portable app for double-click use and the permanent download link.
 - `bupa-scupa-<version>-x64.zip`: extracted app for repeated agent use.
 - `bupa-scupa-<version>-source.zip`: corresponding application source.
-- `bupa-scupa-x64.exe`: identical portable EXE for the permanent download link.
 - `SHA256SUMS.txt`: checksums of the final release files.
 
-`npm run release:source` generates `bupa-scupa-x64.exe` from the versioned EXE
-and includes both in `SHA256SUMS.txt`. `npm run release:check` verifies their
-contents match. Upload all four archives/binaries and the checksum manifest;
-keep both EXEs so existing version-specific links continue to work. The README's
-permanent direct download uses `/releases/latest/download/bupa-scupa-x64.exe`;
-verify it after marking a stable release as latest.
+The builder produces one `bupa-scupa-x64.exe`; do not add a versioned duplicate.
+`npm run release:source` creates the source ZIP and checksums for the three
+downloads. `npm run release:check` verifies these exact files. CI uploads only
+these downloads and `SHA256SUMS.txt`. Keep versioned EXEs in earlier releases
+to preserve their existing links.
+
+The README's permanent direct download uses
+`/releases/latest/download/bupa-scupa-x64.exe`. A version-specific download uses
+`/releases/download/v<version>/bupa-scupa-x64.exe`. Verify the permanent link
+after marking a stable release as latest.
 
 Use the matching `docs/RELEASE_NOTES_<version>.md` for the release notes. Record
 actual tested platforms, limitations and signature status. Add and verify direct

@@ -3,11 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { VERSION } from '../src/version.js';
 
 fs.mkdirSync('.cache/portable-overlap', { recursive: true });
 const root = fs.mkdtempSync(path.resolve('.cache/portable-overlap/run-'));
-const exe = path.resolve(`dist/bupa-scupa-${VERSION}-x64.exe`);
+const exe = path.resolve('dist/bupa-scupa-x64.exe');
 async function launch(command, index) {
   const output = path.join(root, `response-${index}.json`);
   const child = spawn(

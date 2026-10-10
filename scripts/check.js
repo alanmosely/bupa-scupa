@@ -134,6 +134,8 @@ export function checkProject(root = process.cwd()) {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   if (pkg.build.portable?.unpackDirName !== true)
     throw new Error('Portable launches must use separate per-process extraction folders.');
+  if (pkg.build.portable?.artifactName !== 'bupa-scupa-x64.exe')
+    throw new Error('Build one portable EXE with the permanent download filename.');
   if (pkg.build.files.some((f) => /data|private|\.cache|\*\*\/\*/.test(f) && f !== 'src/**/*'))
     throw new Error('Review the desktop packaging allowlist.');
   console.log(

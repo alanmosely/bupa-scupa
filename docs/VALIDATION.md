@@ -21,9 +21,10 @@ synthetic people, claims and PDFs. Synthetic portal tests intercept requests.
 - Concurrent portable invocations use isolated runtime folders.
 - Release checks verify source ZIP completeness, packaged application source,
   notices, FFmpeg source/DLL provenance, Xpdf hashes, ZIP parity and checksums.
-- The permanent EXE alias is generated automatically, included in the checksum
-  manifest and verified to match the versioned EXE. Relevant pull requests run
-  the full Windows validation workflow automatically.
+- The builder produces one portable EXE with the permanent download filename.
+  The checksum manifest covers the EXE, app ZIP and source ZIP; CI uploads only
+  those three downloads and the manifest. Relevant pull requests run the full
+  Windows validation workflow automatically.
 - Source archive checks accept regenerated timestamps but reject changed contents
   and duplicate paths; the pins were derived from the verified upstream inputs.
 - Public source and release contents are reviewed for private records, credentials,

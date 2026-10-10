@@ -5,7 +5,6 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $releaseRoot = (Resolve-Path -LiteralPath $ReleaseDirectory).Path
-$version = '0.1.0'
 $runRoot = Join-Path ([IO.Path]::GetTempPath()) ('scupa-acceptance-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $runRoot | Out-Null
 Write-Output "Acceptance workspace: $runRoot"
@@ -19,8 +18,10 @@ try {
         if ($sums.ContainsKey($Matches[2])) { throw 'Duplicate checksum entry.' }
         $sums[$Matches[2]] = $Matches[1]
     }
-    foreach ($suffix in @('x64.exe', 'x64.zip', 'source.zip')) {
-        $name = "bupa-scupa-$version-$suffix"
+    $appZips = @($sums.Keys | Where-Object { $_ -match '^bupa-scupa-(.+)-x64\.zip$' })
+    if ($appZips.Count -ne 1) { throw 'Expected one versioned application ZIP in the checksum manifest.' }
+    $version = $appZips[0] -replace '^bupa-scupa-(.+)-x64\.zip$', '$1'
+    foreach ($name in @('bupa-scupa-x64.exe', "bupa-scupa-$version-x64.zip", "bupa-scupa-$version-source.zip")) {
         $file = Join-Path $releaseRoot $name
         if (!$sums.ContainsKey($name) -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $sums[$name]) {
             throw "Checksum mismatch: $name"
@@ -29,7 +30,7 @@ try {
     $extracted = Join-Path $runRoot 'extracted'
     Expand-Archive -LiteralPath (Join-Path $releaseRoot "bupa-scupa-$version-x64.zip") -DestinationPath $extracted
     $targets = @(
-        (Join-Path $releaseRoot "bupa-scupa-$version-x64.exe"),
+        (Join-Path $releaseRoot 'bupa-scupa-x64.exe'),
         (Join-Path $extracted 'BUPA SCUPA.exe')
     )
     $env:PATH = Join-Path $env:SystemRoot 'System32'

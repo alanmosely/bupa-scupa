@@ -136,14 +136,8 @@ assert.ok(
 const expectedReleases = new Set([
   `bupa-scupa-${VERSION}-source.zip`,
   `bupa-scupa-${VERSION}-x64.zip`,
-  `bupa-scupa-${VERSION}-x64.exe`,
   'bupa-scupa-x64.exe',
 ]);
-assert.equal(
-  hash(fs.readFileSync('dist/bupa-scupa-x64.exe')),
-  hash(fs.readFileSync(`dist/bupa-scupa-${VERSION}-x64.exe`)),
-  'Permanent download EXE differs from the versioned release',
-);
 for (const line of fs.readFileSync('dist/SHA256SUMS.txt', 'utf8').trim().split('\n')) {
   const [expected, file] = line.split('  ');
   assert.ok(expectedReleases.delete(file), 'Unexpected or repeated release checksum: ' + file);

@@ -46,7 +46,10 @@ jobs:
         with:
           name: bupa-scupa-windows
           path: |
-            dist/*.exe
-            dist/*.zip
+            dist/bupa-scupa-x64.exe
+            dist/bupa-scupa-*-x64.zip
+            dist/bupa-scupa-*-source.zip
             dist/SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
           retention-days: 14

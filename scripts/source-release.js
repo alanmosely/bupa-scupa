@@ -19,12 +19,8 @@ await new Promise((resolve, reject) => {
   zip.end();
 });
 console.log(output);
-const executable = `bupa-scupa-${pkg.version}-x64.exe`;
-const alias = 'bupa-scupa-x64.exe';
-fs.copyFileSync(path.join('dist', executable), path.join('dist', alias));
 const releases = [
-  executable,
-  alias,
+  'bupa-scupa-x64.exe',
   `bupa-scupa-${pkg.version}-x64.zip`,
   `bupa-scupa-${pkg.version}-source.zip`,
 ];
