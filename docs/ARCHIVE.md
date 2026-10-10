@@ -6,15 +6,16 @@ needed. Replacing the executable does not move or remove the archive.
 
 ## Files
 
-| Path                 | Contents                                           |
-| -------------------- | -------------------------------------------------- |
-| `household.json`     | Private member names and settings                  |
-| `raw/`               | Permanent PDF archive, including changed revisions |
-| `master/claims.csv`  | Canonical claim records                            |
-| `master/backups/`    | Previous master versions                           |
-| `parsed.json`        | Parsing results and diagnostics                    |
-| `reports/`           | Changes from each merge                            |
-| `household-backups/` | Previous settings after name corrections           |
+| Path                 | Contents                                              |
+| -------------------- | ----------------------------------------------------- |
+| `household.json`     | Private member names and settings                     |
+| `workspace.json`     | Personal follow-up notes, dates, pins and saved views |
+| `raw/`               | Permanent PDF archive, including changed revisions    |
+| `master/claims.csv`  | Canonical claim records                               |
+| `master/backups/`    | Previous master versions                              |
+| `parsed.json`        | Parsing results and diagnostics                       |
+| `reports/`           | Changes from each merge                               |
+| `household-backups/` | Previous settings after name corrections              |
 
 Back up the **entire archive folder**. These files contain personal records and
 must stay out of public repositories and issue reports. SCUPA does not encrypt
@@ -39,9 +40,51 @@ when another run starts or you change archives. Change reports are also saved in
 `reports/`.
 
 In the master CSV, `currency` describes `claimed` and `paid_currency` describes
-`paid`. Earlier preview CSVs with one currency remain readable. Their header is
+`paid`; `invoice` holds the provider invoice number. Earlier CSVs without invoice
+numbers or with one currency remain readable. Their header is
 upgraded on the next successful merge, with the original CSV backed up first;
 queries and dry runs do not rewrite it. Older previews cannot read the new header.
+Invoice numbers missing from an older CSV are populated when its saved assessments
+are successfully rechecked or synced.
+
+## Browsing and following up
+
+Select a claim row or its reference to open claim details. This shows assessment
+dates, invoice number, payment recipient, benefit category and archive notes. The
+document buttons open the current statements and supporting PDFs in your usual
+PDF viewer. These buttons do not confirm an assessment or change classifications;
+document reviews still take place in Archive help. Historical revisions remain in
+the archive.
+
+**Needs attention** shows awaiting statements with their age, rejected and partially
+paid assessments to review, and personal pins or follow-up dates. A payment
+difference alone does not establish a balance owed: check the statement and invoice.
+Expand **Your follow-up** in claim details to add notes, a last-chased date and a
+next follow-up date, then choose
+**Save follow-up**. Scheduled follow-ups appear immediately and show whether due.
+The collapsed section shows a brief summary of your saved follow-up.
+No notification is sent; open the queue to check them.
+
+**Reviewed — no further action on this assessment** clears its automatic attention
+reason. Pins and scheduled follow-ups still keep it in the queue; clear those fields
+when finished. Changed assessment values or audit notes invalidate the review, so
+the updated assessment can return to the queue. Reopen claim details before reviewing
+an assessment that changed while its drawer was open. Personal notes never change Bupa's
+status, payment amounts, archive audit notes or exported assessment CSV.
+
+Search, member and status are always visible. Open **More filters** for provider
+and a date range. Choose which date the range uses; records without that date are
+excluded when a range is set. Sort
+with the column headings or the sort controls. Amounts sort within each currency.
+**Export shown claims** uses exactly the current filters and sort order, including
+filters hidden when More filters is collapsed. Their summary remains visible above
+the results. In **Views**, **Save current view** stores the current view, filters,
+dates and sorting in this archive. Select it from Saved views to reuse it, or choose
+**Remove selected view** to delete that saved filter.
+Filters for a provider or member no longer present remain selected and return no
+matches, rather than silently broadening the results. Clear them to show all claims.
+Follow-up records and views persist across app restarts and are included when you
+back up the entire archive.
 
 ## Household names
 

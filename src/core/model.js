@@ -13,6 +13,7 @@ export const HEADERS = [
   'benefit_categories',
   'is_dental',
   'provider',
+  'invoice',
   'payment_date',
   'notes',
 ];

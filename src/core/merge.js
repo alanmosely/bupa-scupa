@@ -21,6 +21,7 @@ const STATUS_CANON = new Map(
 export function normalizeRow(row) {
   // Earlier previews stored one currency for both amounts.
   row.paid_currency ??= row.currency;
+  row.invoice ??= '';
   const canon = STATUS_CANON.get((row.status || '').trim().toLowerCase());
   if (canon) row.status = canon;
   if (/^your healthcare provider$/i.test(row.paid_to || '')) row.paid_to = 'provider';
@@ -31,8 +32,13 @@ export function loadMaster(masterPath = MASTER) {
   if (!fs.existsSync(masterPath)) return [];
   const text = fs.readFileSync(masterPath, 'utf8');
   const header = text.replace(/^\ufeff/, '').split(/\r?\n/)[0];
-  const legacy = HEADERS.filter((field) => field !== 'paid_currency').join(',');
-  if (header !== HEADERS.join(',') && header !== legacy)
+  const supported = [
+    HEADERS,
+    HEADERS.filter((field) => field !== 'paid_currency'),
+    HEADERS.filter((field) => field !== 'invoice'),
+    HEADERS.filter((field) => field !== 'invoice' && field !== 'paid_currency'),
+  ];
+  if (!supported.some((fields) => header === fields.join(',')))
     throw new Error('Unexpected master CSV schema. Records have not been changed.');
   return parseCsv(text).map(normalizeRow);
 }
@@ -155,6 +161,7 @@ export function mergeRecords(
       'benefit_categories',
       'is_dental',
       'provider',
+      'invoice',
     ]) {
       if ((existing[f] || '') !== (rec[f] || '') && (rec[f] || '') !== '') {
         diffs.push({ field: f, from: existing[f], to: rec[f] });

@@ -18,6 +18,8 @@ function repository() {
 test('public path policy rejects archive material and unknown roots', () => {
   for (const file of [
     'household.json',
+    'workspace.json',
+    'src/workspace.json',
     'raw/statement.pdf',
     'master/claims.csv',
     'docs/capture.pdf',
