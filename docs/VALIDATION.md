@@ -1,6 +1,6 @@
 # Validation
 
-## Version 0.1.0
+## Version 0.1.1
 
 Local checks were run on Windows 11 x64 with Node.js 24. Tests and screenshots use
 synthetic people, claims and PDFs. Synthetic portal tests intercept requests.
@@ -10,6 +10,8 @@ synthetic people, claims and PDFs. Synthetic portal tests intercept requests.
 - Source and staged-file privacy checks, lint, type checking and formatting pass.
 - Desktop checks cover setup, parsing, document review and undo, separate claim
   and payment currencies, filters, renderer isolation and cancellation.
+- Change summaries cover added claims, reassessed amounts and statuses, literal
+  member names, and clearing results after unchanged or failed runs.
 - A delayed-startup regression checks that Sync stays disabled until the initial
   archive load finishes, preventing overlapping agent operations.
 - Synthetic portal tests cover member confirmation, zero-claim profiles,
@@ -19,6 +21,9 @@ synthetic people, claims and PDFs. Synthetic portal tests intercept requests.
 - Concurrent portable invocations use isolated runtime folders.
 - Release checks verify source ZIP completeness, packaged application source,
   notices, FFmpeg source/DLL provenance, Xpdf hashes, ZIP parity and checksums.
+- The permanent EXE alias is generated automatically, included in the checksum
+  manifest and verified to match the versioned EXE. Relevant pull requests run
+  the full Windows validation workflow automatically.
 - Source archive checks accept regenerated timestamps but reject changed contents
   and duplicate paths; the pins were derived from the verified upstream inputs.
 - Public source and release contents are reviewed for private records, credentials,
