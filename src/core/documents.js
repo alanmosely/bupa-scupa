@@ -63,13 +63,20 @@ export function documentReviews(directory) {
 
 /** Resolve only a current statement PDF inside a known member's archive. */
 export function resolveDocument(file) {
+  if (typeof file !== 'string' || !statementFile.test(file.split('/')[2] || ''))
+    throw new ScupaError('INVALID_INPUT', 'Choose a PDF listed in Archive help.');
+  return resolveClaimPdf(file);
+}
+
+/** Current statements and supporting PDFs, with the same archive boundary as document reviews. */
+export function resolveClaimPdf(file) {
   const parts = typeof file === 'string' ? file.split('/') : [];
   if (
     parts.length !== 3 ||
     !/^[A-Za-z0-9_-]+$/.test(parts[0]) ||
     !Object.hasOwn(loadConfig().members, parts[0]) ||
     !/^CL\d{12}$/.test(parts[1]) ||
-    !statementFile.test(parts[2])
+    !/^(?:statement|supporting)_\d+_[A-Za-z0-9._-]+\.pdf$/i.test(parts[2])
   )
     throw new ScupaError('INVALID_INPUT', 'Choose a PDF listed in Archive help.');
   let absolute = RAW;

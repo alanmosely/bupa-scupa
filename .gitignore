@@ -11,6 +11,7 @@ discover/
 captures/
 household.json
 parsed.json
+workspace.json
 *.pdf
 *.csv
 *.log
