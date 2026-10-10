@@ -6,7 +6,7 @@ your household's **Bupa Global MembersWorld** claims.
 Download statements, track payments, search and filter claims, and export CSV.
 Your PDFs and claim history stay in an archive on your computer.
 
-![BUPA SCUPA development dashboard with fictional claims and payment totals](docs/images/dashboard.png)
+![BUPA SCUPA dashboard with fictional claims and payment totals](docs/images/dashboard.png)
 
 ## Get started
 
@@ -24,7 +24,8 @@ Open the EXE, or extract the ZIP and run `BUPA SCUPA.exe`.
 Browse saved claims offline, filter by member or status, and open the original PDFs.
 Back up your archive regularly.
 
-The development source adds the following improvements for the next release.
+Version 0.2.0 adds claim details, personal follow-ups and saved views. See the
+[release notes](https://github.com/alanmosely/bupa-scupa/releases/tag/v0.2.0).
 
 Select a claim to see its dates, invoice number, payment recipient, benefit category
 and current PDFs. Expand **Your follow-up** to add personal notes, the date you last
