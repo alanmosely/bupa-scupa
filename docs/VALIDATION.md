@@ -1,6 +1,6 @@
 # Validation
 
-## Working-tree claims improvements
+## Version 0.2.0
 
 The claim details, Needs attention and browsing improvements were checked on
 Windows with entirely synthetic archives and documents. No live sync was run for
@@ -18,7 +18,9 @@ these changes.
 - Keyboard focus returns to the claim after its drawer closes. The public dashboard
   screenshot uses fictional records, a generic archive path and no text metadata.
 - The existing desktop smoke and synthetic portal/discovery workflows remain
-  covered. These source changes have not been packaged or published as a release.
+  covered. The release candidate passes full Windows validation: packaged
+  desktop and browser checks, extracted and portable agent checks, cancellation,
+  concurrent portable invocations and exact release artifact inspection.
 
 ## Version 0.1.1
 

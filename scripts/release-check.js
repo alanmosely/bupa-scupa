@@ -66,7 +66,7 @@ for (const name of asar.listPackage(archive)) {
     !/(?:^|[/\\])(?:data|private|raw|master|reports|test|\.cache)(?:[/\\]|$)/i.test(name),
     'Private/development path in app: ' + name,
   );
-  assert.ok(!/(?:household|parsed)\.json$/i.test(name), 'Private config in app');
+  assert.ok(!/(?:household|parsed|workspace)\.json$/i.test(name), 'Private config in app');
   if (/^[/\\]src[/\\]/.test(name) && /\.(?:js|cjs|html|css|ts)$/.test(name)) {
     const relative = name.slice(1).replaceAll('\\', '/');
     const content = asar.extractFile(archive, path.normalize(relative));
@@ -114,7 +114,10 @@ assert.deepEqual(pdfBuild.optionalLibraries, []);
 const zipPaths = new Set();
 await entries(`dist/bupa-scupa-${VERSION}-x64.zip`, (name, content) => {
   assert.ok(!name.split('/').includes('.links'), 'Build-machine browser metadata must not ship');
-  assert.ok(!/(?:^|\/)(?:household|parsed)\.json$/i.test(name), 'Private config must not ship');
+  assert.ok(
+    !/(?:^|\/)(?:household|parsed|workspace)\.json$/i.test(name),
+    'Private config must not ship',
+  );
   zipPaths.add(name);
   assert.equal(
     hash(content),
