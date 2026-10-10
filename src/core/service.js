@@ -1,10 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { DATA, HEADERS, loadConfig, saveConfig, atomicWrite, ensureDir } from './util.js';
+import { DATA, RAW, HEADERS, loadConfig, saveConfig, atomicWrite, ensureDir } from './util.js';
 import { loadMaster, mergeRecords } from './merge.js';
 import { parseRawDir, parseStatementText, pdfToText } from './parse.js';
-import { documentHash, resolveDocument, documentReviews } from './documents.js';
+import {
+  documentHash,
+  resolveDocument,
+  resolveClaimPdf,
+  currentClaimFiles,
+  documentReviews,
+} from './documents.js';
+import { emptyFollowUp, queryClaims, assessmentKey, assessmentReviewed } from './claims.js';
+import { loadWorkspace, storeFollowUp, saveView, removeView } from './workspace.js';
 import { validatePdf } from './safety.js';
 import { toCsv } from './csv.js';
 import { ScupaError } from './errors.js';
@@ -223,6 +231,7 @@ export function snapshot() {
     t.paid /= 100;
   }
   return {
+    workspace: loadWorkspace(),
     schemaVersion: 1,
     dataDir: DATA,
     configured: !!Object.keys(cfg.members).length,
@@ -302,7 +311,7 @@ export function spreadsheetCsv(rows) {
   );
   return '\ufeff' + toCsv(safe, HEADERS);
 }
-export function exportCsv(file) {
+export function exportCsv(file, query = {}) {
   if (!path.isAbsolute(file))
     throw new ScupaError('INVALID_INPUT', 'The export path must be absolute.');
   const relative = path.relative(DATA, path.resolve(file));
@@ -316,8 +325,83 @@ export function exportCsv(file) {
     );
   }
   if (fs.existsSync(file)) throw new ScupaError('FILE_EXISTS', 'Choose a new export filename.');
-  fs.writeFileSync(file, spreadsheetCsv(loadMaster()), { flag: 'wx', mode: 0o600 });
-  return { file, rows: loadMaster().length };
+  const rows = queryClaims(loadMaster(), query, loadWorkspace().followUps, loadConfig().members);
+  fs.writeFileSync(file, spreadsheetCsv(rows), { flag: 'wx', mode: 0o600 });
+  return { file, rows: rows.length };
+}
+
+function knownClaim(claimRef) {
+  if (typeof claimRef !== 'string' || !/^CL\d{12}$/.test(claimRef))
+    throw new ScupaError('INVALID_INPUT', 'Choose a claim in this archive.');
+  const row = loadMaster().find((claim) => claim.claim_ref === claimRef);
+  if (!row || !Object.hasOwn(loadConfig().members, row.member))
+    throw new ScupaError('INVALID_INPUT', 'Choose a claim in this archive.');
+  return row;
+}
+export function claimDetails({ claimRef }) {
+  const row = knownClaim(claimRef);
+  const directory = path.join(RAW, row.member, claimRef);
+  const documents = [];
+  let documentError = '';
+  try {
+    if (fs.existsSync(directory)) {
+      if (fs.lstatSync(directory).isSymbolicLink())
+        throw new Error('Linked archive documents are not supported.');
+      for (const name of currentClaimFiles(directory)) {
+        const file = `${row.member}/${claimRef}/${name}`;
+        const absolute = resolveClaimPdf(file);
+        validatePdf(fs.readFileSync(absolute));
+        documents.push({
+          file,
+          name,
+          sha256: documentHash(absolute),
+          kind: /^supporting_/i.test(name) ? 'Supporting document' : 'Statement document',
+        });
+      }
+    }
+  } catch (error) {
+    documentError = error.message;
+  }
+  const followUp = loadWorkspace().followUps[claimRef] || emptyFollowUp();
+  return {
+    row,
+    followUp: {
+      ...followUp,
+      reviewed: assessmentReviewed(row, followUp),
+      assessmentKey: assessmentKey(row),
+    },
+    documents,
+    documentError,
+  };
+}
+export function claimDocumentPath({ claimRef, file, sha256 }) {
+  const row = knownClaim(claimRef);
+  if (typeof file !== 'string' || !file.startsWith(`${row.member}/${claimRef}/`))
+    throw new ScupaError('INVALID_INPUT', 'Choose a document belonging to this claim.');
+  const absolute = resolveClaimPdf(file);
+  if (typeof sha256 !== 'string' || documentHash(absolute) !== sha256)
+    throw new ScupaError('INVALID_INPUT', 'The PDF has changed. Reopen the claim details.');
+  validatePdf(fs.readFileSync(absolute));
+  return absolute;
+}
+/** Caller holds the archive lock. */
+export function updateFollowUp({ claimRef, followUp }) {
+  const row = knownClaim(claimRef);
+  if (followUp?.reviewed && followUp.assessmentKey !== assessmentKey(row))
+    throw new ScupaError(
+      'INVALID_INPUT',
+      'This assessment has changed. Reopen the claim details before marking it reviewed.',
+    );
+  storeFollowUp(claimRef, { ...followUp, assessmentKey: assessmentKey(row) });
+  return snapshot();
+}
+export function saveClaimView({ name, query }) {
+  saveView(name, query);
+  return snapshot();
+}
+export function removeClaimView({ id }) {
+  removeView(id);
+  return snapshot();
 }
 export function status() {
   const cfg = loadConfig();

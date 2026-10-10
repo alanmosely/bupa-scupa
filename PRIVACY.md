@@ -13,6 +13,8 @@ during a run; this is not a guarantee of forensic erasure after a crash.
 The selected archive contains household names, medical providers, treatment
 dates, statement PDFs, amounts, payment details and claim notes. It is readable
 by the operating system account and anyone else with access to that folder.
+Personal follow-up notes, dates, review markers, pins and saved filters are stored
+separately in `workspace.json` within the same private archive.
 SCUPA does not encrypt it. A folder in OneDrive or another sync service may be
 uploaded by that service; choose a local folder if you do not want that.
 

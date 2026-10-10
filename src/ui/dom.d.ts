@@ -13,7 +13,21 @@ interface UiCommands {
   parse: UiCommand<{ dryRun?: boolean } | undefined, ParseResult>;
   'archive-help': UiCommand<undefined, ReturnType<typeof import('../core/service.js').archiveHelp>>;
   'recover-lock': UiCommand<undefined, ReturnType<typeof import('../core/service.js').recoverLock>>;
-  export: UiCommand<undefined, ReturnType<typeof import('../core/service.js').exportCsv> | null>;
+  export: UiCommand<
+    { query?: import('../core/claims.js').ClaimQuery } | undefined,
+    ReturnType<typeof import('../core/service.js').exportCsv> | null
+  >;
+  'claim-details': UiCommand<
+    { claimRef: string },
+    ReturnType<typeof import('../core/service.js').claimDetails>
+  >;
+  'update-follow-up': UiCommand<
+    { claimRef: string; followUp: import('../core/claims.js').FollowUp },
+    Snapshot
+  >;
+  'save-view': UiCommand<{ name: string; query: import('../core/claims.js').ClaimQuery }, Snapshot>;
+  'remove-view': UiCommand<{ id: string }, Snapshot>;
+  'open-claim-document': UiCommand<{ claimRef: string; file: string; sha256: string }, undefined>;
   'open-folder': UiCommand<undefined, undefined>;
   'open-document': UiCommand<{ file: string; sha256: string }, undefined>;
   'review-document': UiCommand<
@@ -72,6 +86,57 @@ interface UiElements {
   status: HTMLSelectElement;
   claims: HTMLElement;
   empty: HTMLElement;
+  provider: HTMLSelectElement;
+  'date-field': HTMLSelectElement;
+  'date-from': HTMLInputElement;
+  'date-to': HTMLInputElement;
+  'sort-by': HTMLSelectElement;
+  'sort-direction': HTMLButtonElement;
+  'clear-filters': HTMLButtonElement;
+  'more-filters': HTMLButtonElement;
+  'advanced-filters': HTMLElement;
+  'advanced-count': HTMLElement;
+  'filter-summary': HTMLElement;
+  'active-filters': HTMLElement;
+  'view-menu': HTMLDetailsElement;
+  'view-menu-title': HTMLElement;
+  'all-tab': HTMLButtonElement;
+  'attention-tab': HTMLButtonElement;
+  'attention-count': HTMLElement;
+  'view-description': HTMLElement;
+  'filter-error': HTMLElement;
+  'saved-view': HTMLSelectElement;
+  'save-view': HTMLButtonElement;
+  'remove-view': HTMLButtonElement;
+  'save-view-dialog': HTMLDialogElement;
+  'save-view-form': HTMLFormElement;
+  'view-name': HTMLInputElement;
+  'view-save-error': HTMLElement;
+  'cancel-save-view': HTMLButtonElement;
+  'confirm-save-view': HTMLButtonElement;
+  'claim-dialog': HTMLDialogElement;
+  'detail-provider': HTMLElement;
+  'detail-reference': HTMLElement;
+  'detail-member': HTMLElement;
+  'detail-status': HTMLElement;
+  'detail-claimed': HTMLElement;
+  'detail-paid': HTMLElement;
+  'detail-fields': HTMLElement;
+  'detail-notes': HTMLElement;
+  'detail-documents': HTMLElement;
+  'detail-document-error': HTMLElement;
+  'detail-attention': HTMLElement;
+  'close-claim': HTMLButtonElement;
+  'follow-up-form': HTMLFormElement;
+  'follow-up-details': HTMLDetailsElement;
+  'follow-up-summary': HTMLElement;
+  'follow-up-notes': HTMLTextAreaElement;
+  'chased-on': HTMLInputElement;
+  'follow-up-on': HTMLInputElement;
+  'follow-up-pinned': HTMLInputElement;
+  'follow-up-reviewed': HTMLInputElement;
+  'save-follow-up': HTMLButtonElement;
+  'follow-up-message': HTMLElement;
   'archive-path': HTMLElement;
   'open-folder': HTMLButtonElement;
   'change-folder': HTMLButtonElement;

@@ -1,5 +1,25 @@
 # Validation
 
+## Working-tree claims improvements
+
+The claim details, Needs attention and browsing improvements were checked on
+Windows with entirely synthetic archives and documents. No live sync was run for
+these changes.
+
+- 86 tests pass with PDF extraction and FFmpeg source coverage required, including
+  follow-up persistence, reassessment review invalidation, query/export parity,
+  current-document ownership and hash checks, CSV invoice migration and malformed
+  workspace preservation, stale assessment-review rejection and stable missing-amount sorting.
+- Source privacy checks, lint, type checking and formatting pass.
+- Desktop checks cover the compact default screen, expandable filters and follow-ups,
+  active filter summaries, the saved-view menu, PDF opening and persistence across restarts,
+  review markers, provider/date filters, saved filters for missing providers, column sorting, filtered CSV export,
+  invalid date ranges and an 860px window. Rendered screenshots were reviewed.
+- Keyboard focus returns to the claim after its drawer closes. The public dashboard
+  screenshot uses fictional records, a generic archive path and no text metadata.
+- The existing desktop smoke and synthetic portal/discovery workflows remain
+  covered. These source changes have not been packaged or published as a release.
+
 ## Version 0.1.1
 
 Local checks were run on Windows 11 x64 with Node.js 24. Tests and screenshots use

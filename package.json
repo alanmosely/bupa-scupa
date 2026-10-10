@@ -19,7 +19,7 @@
     "vendor": "node scripts/vendor.js",
     "build:pdf": "pwsh -NoProfile -File scripts/build-pdf.ps1",
     "icon": "node scripts/icon.js",
-    "test:desktop": "node scripts/smoke.js",
+    "test:desktop": "node scripts/smoke.js && node scripts/claims-smoke.js",
     "test:portal": "node scripts/portal-smoke.js && node scripts/discovery-smoke.js",
     "build": "npm run check && npm run vendor && npm run build:pdf && npm run icon && npm test && electron-builder --win portable zip --x64 --publish never",
     "release:source": "node scripts/source-release.js",

@@ -28,7 +28,16 @@ try {
   const service = await import('../core/service.js');
   let result;
   if (
-    ['sync', 'parse', 'setup', 'update-household', 'review-document'].includes(workerData.command)
+    [
+      'sync',
+      'parse',
+      'setup',
+      'update-household',
+      'review-document',
+      'update-follow-up',
+      'save-view',
+      'remove-view',
+    ].includes(workerData.command)
   ) {
     const release = service.acquireLock();
     try {
@@ -37,6 +46,10 @@ try {
         result = service.updateHousehold(workerData.edits);
       else if (workerData.command === 'review-document')
         result = service.reviewDocument(workerData);
+      else if (workerData.command === 'update-follow-up')
+        result = service.updateFollowUp(workerData);
+      else if (workerData.command === 'save-view') result = service.saveClaimView(workerData);
+      else if (workerData.command === 'remove-view') result = service.removeClaimView(workerData);
       else if (workerData.command === 'parse')
         result = service.reparse({ dryRun: workerData.dryRun, checkCancelled });
       else {
@@ -68,11 +81,15 @@ try {
       release();
     }
   } else if (workerData.command === 'snapshot') result = service.snapshot();
+  else if (workerData.command === 'claim-details') result = service.claimDetails(workerData);
+  else if (workerData.command === 'claim-document-path')
+    result = service.claimDocumentPath(workerData);
   else if (workerData.command === 'document-path')
     result = service.reviewedDocumentPath(workerData);
   else if (workerData.command === 'archive-help') result = service.archiveHelp();
   else if (workerData.command === 'recover-lock') result = service.recoverLock();
-  else if (workerData.command === 'export') result = service.exportCsv(workerData.file);
+  else if (workerData.command === 'export')
+    result = service.exportCsv(workerData.file, workerData.query);
   else {
     const { execute } = await import('../agent.js');
     result = await execute(workerData.command, { member: workerData.member });

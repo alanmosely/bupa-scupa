@@ -1,4 +1,5 @@
 import { VERSION } from '../version.js';
+import { queryClaims, attentionReasons, assessmentReviewed, localToday } from '../core/claims.js';
 /** @template {keyof UiElements} K @param {K} id @returns {UiElements[K]} */
 function $(id) {
   const element = document.getElementById(id);
@@ -9,6 +10,10 @@ function $(id) {
 let data;
 let busy = false;
 let confirmPending = false;
+let view = 'all';
+let sortDirection = 'desc';
+let selectedClaim = '';
+let selectedAssessmentKey = '';
 function message(text, error = false) {
   $('message').textContent = text;
   $('message').classList.toggle('error', error);
@@ -34,10 +39,14 @@ function setBusy(value) {
     'edit-household',
     'archive-help',
     'error-help',
+    'save-view',
+    'remove-view',
+    'save-follow-up',
   ]))
     $(id).disabled = value;
   $('progress').hidden = !value;
   $('cancel').hidden = !value;
+  if (data) renderRows();
 }
 function amount(currency, value) {
   if (!currency || value === '') return '—';
@@ -46,6 +55,60 @@ function amount(currency, value) {
   } catch {
     return currency + ' ' + Number(value).toFixed(2);
   }
+}
+function shortDate(value) {
+  const date = new Date(value + 'T12:00:00');
+  return date.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
+  });
+}
+function statusLabel(status) {
+  return /^No statement/.test(status) ? 'Awaiting statement' : status;
+}
+function compactAttention(row, followUp) {
+  return attentionReasons(row, followUp)
+    .map((reason) => {
+      if (/^Follow-up/.test(reason))
+        return `${followUp.followUpOn <= localToday() ? 'Due' : 'Follow up'} ${shortDate(followUp.followUpOn)}`;
+      if (/^Awaiting statement ·/.test(reason))
+        return reason.replace('Awaiting statement · ', '') + ' waiting';
+      if (/^Rejected/.test(reason)) return 'Review assessment';
+      if (/^Partially paid/.test(reason)) return 'Check invoice';
+      return reason;
+    })
+    .join(' · ');
+}
+function renderViewControls() {
+  const saved = data.workspace.savedViews.find((saved) => saved.id === $('saved-view').value);
+  $('view-menu-title').textContent = saved ? saved.name : 'Views';
+  $('view-menu-title').title = saved ? `Saved view: ${saved.name}` : 'Saved views';
+  $('remove-view').hidden = !saved;
+  const query = currentQuery();
+  const advancedCount = Number(Boolean(query.provider)) + Number(Boolean(query.from || query.to));
+  $('advanced-count').textContent = String(advancedCount);
+  $('advanced-count').hidden = advancedCount === 0;
+  const summary = [];
+  if (query.provider) summary.push(query.provider);
+  if (query.from || query.to) {
+    const basis = $('date-field').selectedOptions[0].textContent?.replace(' date', '') || 'Date';
+    summary.push(
+      `${basis}: ${query.from ? shortDate(query.from) : 'Any date'} – ${query.to ? shortDate(query.to) : 'Any date'}`,
+    );
+  }
+  const hasFilters = Boolean(query.search || query.member || query.status || advancedCount);
+  const hasSort = query.sort !== 'received_date' || query.direction !== 'desc';
+  $('filter-summary').hidden = !hasFilters && !hasSort;
+  $('active-filters').textContent =
+    summary.join(' · ') || (hasFilters ? 'Filters applied' : 'Custom sort order');
+}
+/** @param {'member' | 'provider'} id @param {string} value */
+function selectFilter(id, value) {
+  const select = $(id);
+  if (value && ![...select.options].some((option) => option.value === value))
+    select.add(new Option(value, value));
+  select.value = value;
 }
 function render() {
   $('setup').hidden = data.configured;
@@ -77,32 +140,90 @@ function render() {
   $('member').replaceChildren(new Option('Everyone', ''));
   for (const [id, member] of Object.entries(data.members))
     $('member').add(new Option(member.displayName, id));
-  if (Object.hasOwn(data.members, previous)) $('member').value = previous;
+  selectFilter('member', previous);
+  const previousProvider = $('provider').value;
+  $('provider').replaceChildren(new Option('All providers', ''));
+  for (const provider of [...new Set(data.rows.map((row) => row.provider).filter(Boolean))].sort())
+    $('provider').add(new Option(provider, provider));
+  selectFilter('provider', previousProvider);
+  const previousView = $('saved-view').value;
+  $('saved-view').replaceChildren(new Option('Choose a saved view', ''));
+  for (const saved of data.workspace.savedViews)
+    $('saved-view').add(new Option(saved.name, saved.id));
+  $('saved-view').value = previousView;
+  $('remove-view').hidden = !$('saved-view').value;
+  $('attention-count').textContent = String(
+    data.rows.filter((row) => attentionReasons(row, data.workspace.followUps[row.claim_ref]).length)
+      .length,
+  );
+  renderRows();
+}
+function currentQuery() {
+  return {
+    search: $('search').value,
+    member: $('member').value,
+    status: $('status').value,
+    provider: $('provider').value,
+    from: $('date-from').value,
+    to: $('date-to').value,
+    dateField: $('date-field').value,
+    sort: $('sort-by').value,
+    direction: sortDirection,
+    view,
+  };
+}
+function applyQuery(query = {}) {
+  $('search').value = query.search || '';
+  selectFilter('member', query.member || '');
+  $('status').value = query.status || '';
+  selectFilter('provider', query.provider || '');
+  $('date-from').value = query.from || '';
+  $('date-to').value = query.to || '';
+  $('date-field').value = query.dateField || 'received_date';
+  $('sort-by').value = query.sort || 'received_date';
+  sortDirection = query.direction || 'desc';
+  view = query.view || 'all';
   renderRows();
 }
 function renderRows() {
-  const search = $('search').value.toLowerCase();
-  const member = $('member').value;
-  const status = $('status').value;
-  const rows = data.rows
-    .filter(
-      (r) =>
-        (!member || r.member === member) &&
-        (!search || Object.values(r).join(' ').toLowerCase().includes(search)) &&
-        (!status ||
-          (status === 'awaiting' && /^No statement/.test(r.status)) ||
-          (status === 'partial' && r.status === 'Partially Paid') ||
-          (status === 'rejected' && r.status === 'Rejected')),
-    )
-    .sort((a, b) => b.received_date.localeCompare(a.received_date));
+  renderViewControls();
+  $('all-tab').setAttribute('aria-pressed', String(view === 'all'));
+  $('attention-tab').setAttribute('aria-pressed', String(view === 'attention'));
+  $('view-description').hidden = view !== 'attention';
+  $('view-description').textContent = 'Pending claims and your follow-ups.';
+  $('sort-direction').textContent = sortDirection === 'asc' ? 'Ascending ↑' : 'Descending ↓';
+  for (const header of document.querySelectorAll('th[data-sort]')) {
+    const selected = header.getAttribute('data-sort') === $('sort-by').value;
+    header.setAttribute(
+      'aria-sort',
+      selected ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none',
+    );
+    const button = header.querySelector('button');
+    if (button) button.dataset.direction = selected ? sortDirection : '';
+  }
+  let rows = [];
+  try {
+    rows = queryClaims(data.rows, currentQuery(), data.workspace.followUps, data.members);
+    $('filter-error').hidden = true;
+  } catch (error) {
+    $('filter-error').textContent = error.message;
+    $('filter-error').hidden = false;
+  }
+  $('export').disabled = busy || !rows.length;
   $('claims').replaceChildren();
   $('empty').hidden = rows.length > 0;
   $('result-count').textContent = `${rows.length} of ${data.rows.length} claims`;
   $('empty').textContent = data.rows.length
-    ? 'No claims match these filters.'
+    ? view === 'attention'
+      ? 'No claims need attention with these filters.'
+      : 'No claims match these filters.'
     : 'Your claims will appear here after your first sync.';
   for (const r of rows) {
     const tr = document.createElement('tr');
+    tr.className = 'claim-row';
+    tr.onclick = () => {
+      if (!busy) openClaim(r.claim_ref);
+    };
     for (const [index, [value, sub]] of [
       [data.members[r.member]?.displayName || r.member, r.claim_ref],
       [
@@ -119,7 +240,18 @@ function renderRows() {
       if (sub) {
         const small = document.createElement('small');
         small.textContent = sub;
-        td.append(small);
+        if (index === 0) {
+          const link = document.createElement('button');
+          link.className = 'claim-link';
+          link.textContent = sub;
+          link.setAttribute('aria-label', `View claim ${sub}`);
+          link.disabled = busy;
+          link.onclick = (event) => {
+            event.stopPropagation();
+            openClaim(r.claim_ref);
+          };
+          td.append(link);
+        } else td.append(small);
       }
       tr.append(td);
     }
@@ -128,12 +260,172 @@ function renderRows() {
     chip.className = 'status-chip';
     if (/No statement|Partially/.test(r.status)) chip.classList.add('attention');
     if (/Rejected|Duplicate/.test(r.status)) chip.classList.add('rejected');
-    chip.textContent = r.status;
+    chip.textContent = statusLabel(r.status);
+    chip.title = r.status;
     td.append(chip);
+    const followUp = data.workspace.followUps[r.claim_ref];
+    if (view === 'attention') {
+      const reason = document.createElement('small');
+      reason.className = 'attention-reason';
+      reason.textContent = compactAttention(r, followUp);
+      td.append(reason);
+    }
+    if (view !== 'attention' && (followUp?.followUpOn || followUp?.pinned)) {
+      const dates = document.createElement('small');
+      dates.textContent = [
+        followUp.followUpOn
+          ? `${followUp.followUpOn <= localToday() ? 'Due' : 'Follow up'} ${shortDate(followUp.followUpOn)}`
+          : '',
+        followUp.pinned ? 'Pinned' : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      dates.className = 'attention-reason';
+      td.append(dates);
+    }
     tr.append(td);
     $('claims').append(tr);
   }
 }
+function renderFollowUp(followUp) {
+  $('follow-up-notes').value = followUp.notes;
+  $('chased-on').value = followUp.chasedOn;
+  $('follow-up-on').value = followUp.followUpOn;
+  $('follow-up-pinned').checked = followUp.pinned;
+  $('follow-up-reviewed').checked = followUp.reviewed;
+}
+function renderFollowUpSummary(row, followUp) {
+  const summary = [];
+  if (followUp.followUpOn)
+    summary.push(
+      `${followUp.followUpOn <= localToday() ? 'Due' : 'Follow up'} ${shortDate(followUp.followUpOn)}`,
+    );
+  else if (followUp.chasedOn) summary.push(`Chased ${shortDate(followUp.chasedOn)}`);
+  if (followUp.pinned) summary.push('Pinned');
+  if (assessmentReviewed(row, followUp)) summary.push('Reviewed');
+  if (followUp.notes) summary.push('Notes saved');
+  $('follow-up-summary').textContent = summary.join(' · ') || 'Add notes or a follow-up date';
+  $('detail-attention').textContent = compactAttention(row, followUp) || 'No follow-up needed.';
+}
+async function openClaim(claimRef) {
+  if (busy) return;
+  setBusy(true);
+  try {
+    const details = await call('claim-details', { claimRef });
+    selectedClaim = claimRef;
+    selectedAssessmentKey = details.followUp.assessmentKey;
+    const row = details.row;
+    $('detail-provider').textContent = row.provider || 'Awaiting a statement';
+    $('detail-member').textContent = data.members[row.member]?.displayName || row.member;
+    $('detail-reference').textContent = row.claim_ref;
+    $('detail-status').textContent = statusLabel(row.status);
+    $('detail-status').title = row.status;
+    $('detail-status').className =
+      'status-chip' +
+      (/No statement|Partially/.test(row.status)
+        ? ' attention'
+        : /Rejected|Duplicate/.test(row.status)
+          ? ' rejected'
+          : '');
+    $('detail-claimed').textContent = amount(row.currency, row.claimed);
+    $('detail-paid').textContent = amount(row.paid_currency, row.paid);
+    $('detail-fields').replaceChildren();
+    for (const [label, value] of [
+      ['Received', row.received_date],
+      ['Treatment', row.treatment_date],
+      ['Payment date', row.payment_date],
+      ['Paid to', row.paid_to],
+      ['Invoice', row.invoice],
+      ['Benefit', row.benefit_categories],
+    ]) {
+      const field = document.createElement('div');
+      const term = document.createElement('dt');
+      term.textContent = label;
+      const description = document.createElement('dd');
+      description.textContent = value || 'Not recorded';
+      field.append(term, description);
+      $('detail-fields').append(field);
+    }
+    $('detail-notes').textContent = row.notes || 'No assessment or archive notes recorded.';
+    $('detail-documents').replaceChildren();
+    for (const doc of details.documents) {
+      const button = document.createElement('button');
+      button.className = 'document-button';
+      const title = document.createElement('strong');
+      title.textContent = doc.kind;
+      const name = document.createElement('span');
+      name.textContent = doc.name;
+      button.append(title, name);
+      button.onclick = async () => {
+        button.disabled = true;
+        try {
+          await call('open-claim-document', { claimRef, file: doc.file, sha256: doc.sha256 });
+        } catch (error) {
+          $('detail-document-error').textContent = error.message;
+          $('detail-document-error').hidden = false;
+        } finally {
+          button.disabled = false;
+        }
+      };
+      $('detail-documents').append(button);
+    }
+    if (!details.documents.length) {
+      const empty = document.createElement('p');
+      empty.textContent = 'No current PDFs are saved for this claim yet.';
+      $('detail-documents').append(empty);
+    }
+    $('detail-document-error').textContent = details.documentError;
+    $('detail-document-error').hidden = !details.documentError;
+    renderFollowUpSummary(row, details.followUp);
+    renderFollowUp(details.followUp);
+    $('follow-up-details').open = false;
+    document.querySelector('.assessment-notes')?.removeAttribute('open');
+    $('follow-up-message').hidden = true;
+    $('claim-dialog').showModal();
+    $('claim-dialog').scrollTop = 0;
+  } catch (error) {
+    message(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+}
+$('close-claim').onclick = () => $('claim-dialog').close();
+$('claim-dialog').addEventListener('close', () => {
+  const claimRef = selectedClaim;
+  selectedClaim = '';
+  selectedAssessmentKey = '';
+  const link = [...$('claims').querySelectorAll('button')].find(
+    (button) => button.getAttribute('aria-label') === `View claim ${claimRef}`,
+  );
+  (link || $(view === 'attention' ? 'attention-tab' : 'all-tab')).focus();
+});
+$('follow-up-form').onsubmit = async (event) => {
+  event.preventDefault();
+  if (busy || !selectedClaim) return;
+  setBusy(true);
+  const followUp = {
+    notes: $('follow-up-notes').value,
+    chasedOn: $('chased-on').value,
+    followUpOn: $('follow-up-on').value,
+    pinned: $('follow-up-pinned').checked,
+    reviewed: $('follow-up-reviewed').checked,
+    assessmentKey: selectedAssessmentKey,
+  };
+  try {
+    data = await call('update-follow-up', { claimRef: selectedClaim, followUp });
+    render();
+    const row = data.rows.find((row) => row.claim_ref === selectedClaim);
+    if (row) renderFollowUpSummary(row, data.workspace.followUps[selectedClaim]);
+    $('follow-up-message').textContent = 'Follow-up saved.';
+    $('follow-up-message').className = '';
+  } catch (error) {
+    $('follow-up-message').textContent = error.message;
+    $('follow-up-message').className = 'error-text';
+  } finally {
+    $('follow-up-message').hidden = false;
+    setBusy(false);
+  }
+};
 async function refresh() {
   data = await call('snapshot');
   render();
@@ -243,7 +535,12 @@ for (const id of /** @type {const} */ (['choose-folder', 'change-folder']))
     try {
       data = await call('folder');
       clearChanges();
+      $('claim-dialog').close();
+      $('saved-view').value = '';
+      $('provider').value = '';
+      $('member').value = '';
       render();
+      applyQuery();
     } catch (e) {
       message(e.message, true);
     }
@@ -251,14 +548,124 @@ for (const id of /** @type {const} */ (['choose-folder', 'change-folder']))
 $('open-folder').onclick = () => call('open-folder').catch((e) => message(e.message, true));
 $('export').onclick = async () => {
   try {
-    const result = await call('export');
-    if (result) message(`Exported ${result.rows} claims to ${result.file}`);
+    const result = await call('export', { query: currentQuery() });
+    if (result)
+      message(
+        `Exported ${result.rows} ${result.rows === 1 ? 'claim' : 'claims'} to ${result.file}`,
+      );
   } catch (e) {
     message(e.message, true);
   }
 };
-for (const id of /** @type {const} */ (['search', 'member', 'status']))
-  $(id).addEventListener('input', renderRows);
+for (const id of /** @type {const} */ ([
+  'search',
+  'member',
+  'status',
+  'provider',
+  'date-field',
+  'date-from',
+  'date-to',
+  'sort-by',
+]))
+  $(id).addEventListener('input', () => {
+    $('saved-view').value = '';
+    $('remove-view').hidden = true;
+    renderRows();
+  });
+$('sort-direction').onclick = () => {
+  sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+  $('saved-view').value = '';
+  $('remove-view').hidden = true;
+  renderRows();
+};
+for (const button of document.querySelectorAll('button.column-sort')) {
+  button.addEventListener('click', () => {
+    const sort = button.getAttribute('data-sort') || 'received_date';
+    sortDirection = $('sort-by').value === sort && sortDirection === 'asc' ? 'desc' : 'asc';
+    $('sort-by').value = sort;
+    $('saved-view').value = '';
+    $('remove-view').hidden = true;
+    renderRows();
+  });
+}
+$('all-tab').onclick = () => {
+  view = 'all';
+  $('saved-view').value = '';
+  $('remove-view').hidden = true;
+  renderRows();
+};
+$('attention-tab').onclick = () => {
+  view = 'attention';
+  $('saved-view').value = '';
+  $('remove-view').hidden = true;
+  renderRows();
+};
+$('clear-filters').onclick = () => {
+  $('saved-view').value = '';
+  $('remove-view').hidden = true;
+  applyQuery({ view });
+};
+$('more-filters').onclick = () => {
+  const expanded = $('advanced-filters').hidden;
+  $('advanced-filters').hidden = !expanded;
+  $('more-filters').setAttribute('aria-expanded', String(expanded));
+};
+$('saved-view').onchange = () => {
+  const saved = data.workspace.savedViews.find((saved) => saved.id === $('saved-view').value);
+  $('remove-view').hidden = !saved;
+  if (saved) applyQuery(saved.query);
+  else renderViewControls();
+  $('view-menu').open = false;
+};
+$('save-view').onclick = () => {
+  $('view-menu').open = false;
+  $('view-name').value = '';
+  $('view-save-error').hidden = true;
+  $('save-view-dialog').showModal();
+};
+$('cancel-save-view').onclick = () => $('save-view-dialog').close();
+$('save-view-form').onsubmit = async (event) => {
+  event.preventDefault();
+  if (busy) return;
+  setBusy(true);
+  $('confirm-save-view').disabled = true;
+  try {
+    data = await call('save-view', { name: $('view-name').value, query: currentQuery() });
+    render();
+    $('saved-view').value = data.workspace.savedViews.at(-1)?.id || '';
+    $('remove-view').hidden = false;
+    renderViewControls();
+    $('save-view-dialog').close();
+    message('View saved.');
+  } catch (error) {
+    $('view-save-error').textContent = error.message;
+    $('view-save-error').hidden = false;
+  } finally {
+    setBusy(false);
+    $('confirm-save-view').disabled = false;
+  }
+};
+$('remove-view').onclick = async () => {
+  if (busy) return;
+  setBusy(true);
+  try {
+    data = await call('remove-view', { id: $('saved-view').value });
+    render();
+    $('view-menu').open = false;
+    message('Saved view removed.');
+  } catch (error) {
+    message(error.message, true);
+  } finally {
+    setBusy(false);
+  }
+};
+document.addEventListener('click', (event) => {
+  if (event.target instanceof window.Node && !$('view-menu').contains(event.target))
+    $('view-menu').open = false;
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') $('view-menu').open = false;
+});
 window.scupa.onProgress((event) => {
   if (event.type === 'confirm' || event.type === 'household') {
     confirmPending = true;

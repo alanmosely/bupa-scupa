@@ -274,6 +274,16 @@ app
           if (error) throw new Error(error);
           return { ok: true, result: undefined };
         }
+        if (command === 'open-claim-document') {
+          const file = await run('claim-document-path', {
+            claimRef: options.claimRef,
+            file: options.file,
+            sha256: options.sha256,
+          });
+          const error = await shell.openPath(file);
+          if (error) throw new Error(error);
+          return { ok: true, result: undefined };
+        }
         if (command === 'open-document' || command === 'review-document') {
           const document = { file: options.file, sha256: options.sha256 };
           if (command === 'open-document') {
@@ -319,7 +329,9 @@ app
           });
           return {
             ok: true,
-            result: choice.canceled ? null : await run('export', { file: choice.filePath }),
+            result: choice.canceled
+              ? null
+              : await run('export', { file: choice.filePath, query: options.query }),
           };
         }
         if (
@@ -331,10 +343,23 @@ app
             'update-household',
             'archive-help',
             'recover-lock',
+            'claim-details',
+            'update-follow-up',
+            'save-view',
+            'remove-view',
           ].includes(command)
         )
           throw new Error('Unsupported command.');
-        if (agent && ['update-household', 'recover-lock'].includes(command))
+        if (
+          agent &&
+          [
+            'update-household',
+            'recover-lock',
+            'update-follow-up',
+            'save-view',
+            'remove-view',
+          ].includes(command)
+        )
           throw Object.assign(
             new Error('Close the agent request and open SCUPA normally to manage this archive.'),
             { code: 'HUMAN_ACTION_REQUIRED' },
@@ -351,7 +376,15 @@ app
                       fullRefresh:
                         options.fullRefresh === true || agent?.options.fullRefresh === true,
                     }
-                  : {};
+                  : command === 'claim-details'
+                    ? { claimRef: options.claimRef }
+                    : command === 'update-follow-up'
+                      ? { claimRef: options.claimRef, followUp: options.followUp }
+                      : command === 'save-view'
+                        ? { name: options.name, query: options.query }
+                        : command === 'remove-view'
+                          ? { id: options.id }
+                          : {};
         if (agent && command === 'sync') agentSession.event({ phase: 'starting' });
         const result = await run(command, safeOptions);
         if (agent && command === 'setup')

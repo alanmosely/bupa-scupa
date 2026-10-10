@@ -110,8 +110,36 @@
               <h3>Claims</h3>
               <p id="result-count">Your permanent local archive</p>
             </div>
-            <button id="export">Export CSV</button>
+            <button id="export">Export shown claims</button>
           </div>
+          <div class="claims-navigation">
+            <div class="view-tabs" role="group" aria-label="Claim views">
+              <button id="all-tab" aria-pressed="true">All claims</button>
+              <button id="attention-tab" aria-pressed="false">
+                Needs attention <span id="attention-count">0</span>
+              </button>
+            </div>
+            <div class="records-actions">
+              <button id="more-filters" aria-expanded="false" aria-controls="advanced-filters">
+                More filters <span id="advanced-count" hidden></span>
+              </button>
+              <details id="view-menu" class="view-menu">
+                <summary><span id="view-menu-title">Views</span></summary>
+                <div class="saved-views">
+                  <label
+                    >Saved views<select id="saved-view">
+                      <option value="">Choose a saved view</option>
+                    </select></label
+                  >
+                  <button id="save-view">Save current view</button>
+                  <button id="remove-view" hidden>Remove selected view</button>
+                </div>
+              </details>
+            </div>
+          </div>
+          <p id="view-description" class="view-description">
+            Select a claim to view its documents and follow-up notes.
+          </p>
           <div class="filters">
             <label
               >Search claims<input
@@ -128,18 +156,67 @@
                 <option value="awaiting">Awaiting a statement</option>
                 <option value="partial">Partially paid</option>
                 <option value="rejected">Rejected</option>
+                <option value="paid">Paid in full</option>
+                <option value="duplicate">Duplicate declined</option>
+                <option value="planRate">Paid at plan rate</option>
               </select></label
             >
           </div>
+          <div id="advanced-filters" class="advanced-filters" hidden>
+            <div class="date-filters">
+              <label
+                >Provider<select id="provider">
+                  <option value="">All providers</option>
+                </select></label
+              >
+              <label
+                >Date range uses<select id="date-field">
+                  <option value="received_date">Received date</option>
+                  <option value="treatment_date">Treatment date</option>
+                  <option value="payment_date">Payment date</option>
+                </select></label
+              >
+              <label>From<input id="date-from" type="date" /></label>
+              <label>To<input id="date-to" type="date" /></label>
+              <label
+                >Sort by<select id="sort-by">
+                  <option value="received_date">Received date</option>
+                  <option value="treatment_date">Treatment date</option>
+                  <option value="payment_date">Payment date</option>
+                  <option value="member">Member</option>
+                  <option value="provider">Provider</option>
+                  <option value="claimed">Claimed amount</option>
+                  <option value="paid">Paid amount</option>
+                  <option value="status">Status</option>
+                </select></label
+              >
+              <button id="sort-direction" aria-label="Change sort direction">Descending ↓</button>
+            </div>
+          </div>
+          <div id="filter-summary" class="filter-summary" hidden>
+            <p id="active-filters"></p>
+            <button id="clear-filters">Clear filters</button>
+          </div>
+          <p id="filter-error" class="error-text filter-error" role="alert" hidden></p>
           <div class="table-scroll">
             <table aria-label="Household claims">
               <thead>
                 <tr>
-                  <th scope="col">Member</th>
-                  <th scope="col">Provider</th>
-                  <th scope="col" class="numeric">Claimed</th>
-                  <th scope="col" class="numeric">Paid</th>
-                  <th scope="col">Status</th>
+                  <th scope="col" data-sort="member">
+                    <button class="column-sort" data-sort="member">Member</button>
+                  </th>
+                  <th scope="col" data-sort="provider">
+                    <button class="column-sort" data-sort="provider">Provider</button>
+                  </th>
+                  <th scope="col" class="numeric" data-sort="claimed">
+                    <button class="column-sort" data-sort="claimed">Claimed</button>
+                  </th>
+                  <th scope="col" class="numeric" data-sort="paid">
+                    <button class="column-sort" data-sort="paid">Paid</button>
+                  </th>
+                  <th scope="col" data-sort="status">
+                    <button class="column-sort" data-sort="status">Status</button>
+                  </th>
                 </tr>
               </thead>
               <tbody id="claims"></tbody>
@@ -182,6 +259,83 @@
         </div>
       </footer>
     </main>
+    <dialog id="claim-dialog" class="claim-drawer" aria-labelledby="detail-provider">
+      <div class="detail-heading">
+        <div>
+          <p class="eyebrow">CLAIM DETAILS</p>
+          <h3 id="detail-provider"></h3>
+          <p id="detail-member"></p>
+          <p id="detail-reference" class="reference"></p>
+        </div>
+        <button id="close-claim" aria-label="Close claim details">✕</button>
+      </div>
+      <div id="detail-status" class="status-chip"></div>
+      <div class="detail-amounts">
+        <div><span>Claimed</span><strong id="detail-claimed"></strong></div>
+        <div><span>Paid</span><strong id="detail-paid"></strong></div>
+      </div>
+      <dl id="detail-fields" class="detail-fields"></dl>
+      <section class="detail-section">
+        <h4>Documents</h4>
+        <div id="detail-documents" class="document-list"></div>
+        <p id="detail-document-error" class="error-text" hidden></p>
+      </section>
+      <details class="assessment-notes">
+        <summary>Assessment and archive notes</summary>
+        <p id="detail-notes"></p>
+      </details>
+      <details id="follow-up-details" class="follow-up-section">
+        <summary><span>Your follow-up</span><small id="follow-up-summary"></small></summary>
+        <p id="detail-attention"></p>
+        <form id="follow-up-form">
+          <label
+            >Personal notes<textarea
+              id="follow-up-notes"
+              rows="3"
+              maxlength="4000"
+              placeholder="Questions for Bupa, invoice checks, or what happened when you called"
+            ></textarea>
+          </label>
+          <div class="follow-up-dates">
+            <label>Last chased Bupa<input id="chased-on" type="date" /></label
+            ><label>Next follow-up<input id="follow-up-on" type="date" /></label>
+          </div>
+          <label class="checkbox-label"
+            ><input id="follow-up-pinned" type="checkbox" /> Pin in Needs attention</label
+          >
+          <label class="checkbox-label"
+            ><input id="follow-up-reviewed" type="checkbox" /> Reviewed — no further action on this
+            assessment</label
+          >
+          <p class="field-help">
+            These notes are yours. They do not change Bupa’s claim status. A pin or follow-up date
+            keeps this claim in Needs attention.
+          </p>
+          <div class="actions">
+            <p id="follow-up-message" role="status" hidden></p>
+            <button id="save-follow-up" type="submit" class="primary">Save follow-up</button>
+          </div>
+        </form>
+      </details>
+    </dialog>
+    <dialog id="save-view-dialog" aria-labelledby="save-view-title">
+      <h3 id="save-view-title">Save this view</h3>
+      <p>Keep the current filters, date range and sort order for this archive.</p>
+      <form id="save-view-form">
+        <label
+          >View name<input
+            id="view-name"
+            maxlength="60"
+            required
+            placeholder="For example: Dental claims to check"
+        /></label>
+        <p id="view-save-error" class="error-text" role="alert" hidden></p>
+        <div class="actions">
+          <button id="cancel-save-view" type="button">Cancel</button
+          ><button id="confirm-save-view" class="primary" type="submit">Save view</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="confirmation" aria-labelledby="confirm-name">
       <form method="dialog">
         <p class="eyebrow">CHECK BEFORE IMPORTING</p>

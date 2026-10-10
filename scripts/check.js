@@ -55,7 +55,7 @@ export function checkPublicPath(file) {
           'household-backups',
         ].includes(part.toLowerCase()),
       ) ||
-    /(?:^|\/)(?:household|parsed)\.json$/i.test(normal) ||
+    /(?:^|\/)(?:household|parsed|workspace)\.json$/i.test(normal) ||
     /\.(?:pdf|csv|bak|log|tmp)$/i.test(normal)
   )
     throw new Error('Private archive material found: ' + file);

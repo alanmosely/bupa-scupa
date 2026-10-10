@@ -105,7 +105,9 @@ commands do not require either browser.
 `schemas.responses` (one per command) and `schemas.event`. Requests describe the
 parsed command/options object. Responses describe the complete JSON envelope.
 The v1 additions are an optional `jobId` on responses and `changes` in parse/sync
-results. `changes.added` contains proposed canonical rows; `changes.updated`
+results. `changes.added` contains proposed canonical rows, including the provider
+`invoice` number when recorded; earlier archives return an empty invoice until
+their assessments are successfully rechecked or synced. `changes.updated`
 contains the member/reference and field differences with `from`/`to` values.
 Counts remain available as `added` and `updated`. Dry runs write diagnostics
 but preserve the master, backups and change reports.

@@ -19,6 +19,10 @@ const members = { type: 'object', additionalProperties: member };
 const row = object(Object.fromEntries(HEADERS.map((key) => [key, string])));
 row.properties.currency = { ...string, description: 'Currency of the claimed amount.' };
 row.properties.paid_currency = { ...string, description: 'Currency of the paid amount.' };
+row.properties.invoice = {
+  ...string,
+  description: 'Provider invoice number, or empty when not recorded.',
+};
 const totals = {
   type: 'object',
   description:
