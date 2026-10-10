@@ -20,9 +20,14 @@ async function launch(command, index) {
         SCUPA_APP_DIR: path.join(root, `preferences-${index}`),
       },
       windowsHide: true,
-      stdio: 'ignore',
+      stdio: ['ignore', 'pipe', 'pipe'],
     },
   );
+  child.stdout.resume();
+  let stderr = '';
+  child.stderr.on('data', (chunk) => {
+    stderr = (stderr + chunk.toString()).slice(-4000);
+  });
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       child.kill();
@@ -35,7 +40,11 @@ async function launch(command, index) {
     child.once('exit', (code) => {
       clearTimeout(timer);
       if (code !== 0)
-        reject(new Error('Concurrent portable command failed: ' + command + ' (' + code + ')'));
+        reject(
+          new Error(
+            'Concurrent portable command failed: ' + command + ' (' + code + ')\n' + stderr,
+          ),
+        );
       else resolve();
     });
   });
