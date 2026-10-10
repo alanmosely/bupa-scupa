@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import Ajv from 'ajv';
 import { API } from '../src/agent.js';
-import { syntheticPdf, statement, REF } from '../test/fixtures.js';
+import { syntheticPdf, statement, REF, approveAssessment } from '../test/fixtures.js';
 fs.mkdirSync('.cache/agent-smoke', { recursive: true });
 const testDir = fs.mkdtempSync(path.resolve('.cache/agent-smoke/run-'));
 const archive = path.join(testDir, 'private archive');
@@ -21,6 +21,7 @@ fs.writeFileSync(
 const raw = path.join(archive, 'raw', 'm_demo', REF);
 fs.mkdirSync(raw, { recursive: true });
 fs.writeFileSync(path.join(raw, 'statement_1_demo.pdf'), syntheticPdf(statement()));
+approveAssessment(raw, 'statement_1_demo.pdf');
 const portable = process.argv.includes('--portable');
 const exe = path.resolve(portable ? 'dist/bupa-scupa-x64.exe' : 'dist/win-unpacked/BUPA SCUPA.exe');
 const ajv = new Ajv({ strict: true });

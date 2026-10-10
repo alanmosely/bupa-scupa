@@ -31,26 +31,34 @@ export function currentClaimFiles(directory) {
   return current.files;
 }
 
-export function supportingReviews(directory) {
+export function documentReviews(directory) {
   const file = path.join(directory, 'document-reviews.json');
-  if (!fs.existsSync(file)) return {};
+  if (!fs.existsSync(file)) return { supporting: {}, assessments: {} };
   if (fs.lstatSync(file).isSymbolicLink())
     throw new Error('Linked document reviews are not supported.');
   const review = readMetadata(file);
+  const assessments = review?.assessments === undefined ? {} : review.assessments;
   if (
     review?.schemaVersion !== 1 ||
     !review.supporting ||
     typeof review.supporting !== 'object' ||
     Array.isArray(review.supporting) ||
-    Object.entries(review.supporting).some(
-      ([name, entry]) =>
-        !statementFile.test(name) ||
-        !/^[a-f0-9]{64}$/.test(entry?.sha256) ||
-        typeof entry?.reviewedAt !== 'string',
-    )
+    [review.supporting, assessments].some(
+      (decisions) =>
+        !decisions ||
+        typeof decisions !== 'object' ||
+        Array.isArray(decisions) ||
+        Object.entries(decisions).some(
+          ([name, entry]) =>
+            !statementFile.test(name) ||
+            !/^[a-f0-9]{64}$/.test(entry?.sha256) ||
+            typeof entry?.reviewedAt !== 'string',
+        ),
+    ) ||
+    Object.keys(review.supporting).some((name) => Object.hasOwn(assessments, name))
   )
     throw new Error('Invalid document-reviews.json — review decisions cannot be trusted.');
-  return review.supporting;
+  return { supporting: review.supporting, assessments };
 }
 
 /** Resolve only a current statement PDF inside a known member's archive. */

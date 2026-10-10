@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import Ajv from 'ajv';
 import { API, parseArgs, createAgentSession, reserveResult } from '../src/agent.js';
-import { REF, statement, convertedStatement, syntheticPdf } from './fixtures.js';
+import { REF, statement, convertedStatement, syntheticPdf, approveAssessment } from './fixtures.js';
 
 const ajv = new Ajv({ strict: true });
 const responses = Object.fromEntries(
@@ -34,6 +34,7 @@ function fixture(text = statement()) {
   const raw = path.join(archive, 'raw', 'm_demo', REF);
   fs.mkdirSync(raw, { recursive: true });
   fs.writeFileSync(path.join(raw, 'statement_1_demo.pdf'), syntheticPdf(text));
+  approveAssessment(raw, 'statement_1_demo.pdf');
   return { root, archive, raw, master: path.join(archive, 'master', 'claims.csv') };
 }
 function invoke(command, archive, args = []) {
@@ -180,6 +181,11 @@ test(
       path.join(raw, 'statement_2_revision.pdf'),
       syntheticPdf(statement({ paid: '100.00', date: '03/01/2000' })),
     );
+    const unreviewed = invoke('parse', archive).value;
+    assert.equal(unreviewed.ok, false);
+    assert.equal(unreviewed.error.code, 'PARSE_FAILED');
+    assert.deepEqual(fs.readFileSync(master), before);
+    approveAssessment(raw, 'statement_2_revision.pdf');
     const next = invoke('parse', archive, ['--dry-run']).value;
     assert.equal(next.result.updated, 1);
     assert.deepEqual(

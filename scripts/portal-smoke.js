@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { REF, OTHER, syntheticPdf } from '../test/fixtures.js';
+import { REF, OTHER, syntheticPdf, approveAssessment } from '../test/fixtures.js';
 fs.mkdirSync('.cache/portal-tests', { recursive: true });
 process.env.SCUPA_DATA_DIR = fs.mkdtempSync(path.resolve('.cache/portal-tests/archive-'));
 process.env.SCUPA_PDFTOTEXT = path.resolve('vendor/xpdf/pdftotext.exe');
@@ -166,6 +166,16 @@ for (const payment of ['80.00', '100.00', '80.00']) {
   );
   assert.deepEqual(downloads, [REF, OTHER]);
   originalFiles.push(JSON.parse(fs.readFileSync(currentFile, 'utf8')).files[0]);
+  for (const member of ['test_member', 'other_member']) {
+    const memberDir = path.join(RAW, member);
+    for (const claim of fs.readdirSync(memberDir)) {
+      const claimDir = path.join(memberDir, claim);
+      if (!fs.statSync(claimDir).isDirectory()) continue;
+      for (const file of JSON.parse(fs.readFileSync(path.join(claimDir, 'current.json'), 'utf8'))
+        .files)
+        approveAssessment(claimDir, file);
+    }
+  }
   reparse();
   assert.equal(loadMaster().find((row) => row.claim_ref === REF).paid, Number(payment).toFixed(1));
   assert.equal(reparse().updated, 0);

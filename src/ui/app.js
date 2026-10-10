@@ -352,7 +352,14 @@ async function showArchiveHelp() {
       : 'No parsing problems have been recorded.';
     $('help-issues').replaceChildren();
     for (const issue of help.issues) {
-      if (help.documents.some((doc) => issue.startsWith(doc.file + ':'))) continue;
+      if (
+        help.documents.some(
+          (doc) =>
+            issue.startsWith(doc.file + ':') &&
+            (!doc.readable || issue.includes('[UNREVIEWED_ASSESSMENT]')),
+        )
+      )
+        continue;
       const item = document.createElement('li');
       item.textContent = issue;
       $('help-issues').append(item);
@@ -361,7 +368,14 @@ async function showArchiveHelp() {
       const item = document.createElement('li');
       const label = document.createElement('p');
       label.textContent =
-        doc.file + (doc.supporting ? ' — marked as supporting.' : ' — no readable text.');
+        doc.file +
+        (doc.supporting
+          ? ' — marked as supporting.'
+          : doc.assessment
+            ? ' — confirmed Bupa assessment.'
+            : doc.readable
+              ? ' — assessment needs your confirmation.'
+              : ' — no readable text.');
       const actions = document.createElement('div');
       actions.className = 'actions';
       const open = document.createElement('button');
@@ -371,7 +385,7 @@ async function showArchiveHelp() {
         try {
           await call('open-document', doc);
           $('help-summary').textContent =
-            'PDF opened. Review every page before marking it as supporting.';
+            'PDF opened. Review every page and check who issued it before classifying it.';
         } catch (error) {
           $('help-summary').textContent = error.message;
         } finally {
@@ -379,14 +393,23 @@ async function showArchiveHelp() {
         }
       };
       const review = document.createElement('button');
-      review.textContent = doc.supporting
-        ? 'Undo supporting classification'
-        : 'Mark as supporting document';
+      review.textContent = doc.readable
+        ? doc.assessment
+          ? 'Undo assessment confirmation'
+          : 'Confirm Bupa assessment'
+        : doc.supporting
+          ? 'Undo supporting classification'
+          : 'Mark as supporting document';
       review.disabled = help.lock.state !== 'unlocked';
       review.onclick = async () => {
         review.disabled = true;
         try {
-          await call('review-document', { ...doc, supporting: !doc.supporting });
+          await call('review-document', {
+            file: doc.file,
+            sha256: doc.sha256,
+            classification:
+              doc.assessment || doc.supporting ? null : doc.readable ? 'assessment' : 'supporting',
+          });
           await showArchiveHelp();
           $('help-summary').textContent =
             'Review decisions are shown below. Recheck saved PDFs to update the parsing results.';

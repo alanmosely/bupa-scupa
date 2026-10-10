@@ -36,7 +36,7 @@ try {
       else if (workerData.command === 'update-household')
         result = service.updateHousehold(workerData.edits);
       else if (workerData.command === 'review-document')
-        result = service.reviewSupportingDocument(workerData);
+        result = service.reviewDocument(workerData);
       else if (workerData.command === 'parse')
         result = service.reparse({ dryRun: workerData.dryRun, checkCancelled });
       else {

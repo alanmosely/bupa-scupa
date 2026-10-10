@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { CLAIM_STATUS } from './model.js';
-import { currentClaimFiles, supportingReviews, documentHash } from './documents.js';
+import { currentClaimFiles, documentReviews, documentHash } from './documents.js';
 import {
   RAW,
   PARSED,
@@ -398,7 +398,7 @@ export function parseRawDir({
       let currentFiles, reviews;
       try {
         currentFiles = currentClaimFiles(claimDir);
-        reviews = supportingReviews(claimDir);
+        reviews = documentReviews(claimDir);
       } catch (error) {
         stats.errors.push(`${member}/${claimId}: ${error.message} — refusing to merge`);
         continue;
@@ -439,10 +439,23 @@ export function parseRawDir({
           /(?:^|\n|[ \t]{2,})[ \t]*(?:(?:tax[ \t]+)?invoice\b|receipt\b|order[ \t]+(?:summary|details|confirmation)\b)/i;
         const statementMarker =
           /\b(?:For\s+Claim|(?:claim|payment)\s+(?:statement|summary)|Total\s+payment\s+made)\b/i;
-        if (!text.trim()) {
+        if (parsed.length || !text.trim()) {
           const sha256 = documentHash(path.join(claimDir, f));
-          documents.push({ file: `${member}/${claimId}/${f}`, sha256 });
-          if (reviews[f]?.sha256 === sha256) supportingStatements.add(f);
+          documents.push({ file: `${member}/${claimId}/${f}`, sha256, readable: !!text.trim() });
+          if (!text.trim() && reviews.supporting[f]?.sha256 === sha256) supportingStatements.add(f);
+          // Portal tags and statement-shaped text do not establish insurer authorship.
+          // Authorise each PDF independently of the extracted-text cache.
+          if (parsed.length && reviews.assessments[f]?.sha256 !== sha256)
+            parsed = parsed.map((rec) => ({
+              ...rec,
+              errors: [
+                ...rec.errors,
+                {
+                  code: 'UNREVIEWED_ASSESSMENT',
+                  message: 'confirm this PDF is a Bupa assessment in Archive help before importing',
+                },
+              ],
+            }));
         }
         if (!parsed.length && supportingTitle.test(text) && !statementMarker.test(text)) {
           supportingStatements.add(f);

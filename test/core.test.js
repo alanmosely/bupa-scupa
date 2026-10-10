@@ -3,7 +3,14 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { REF, OTHER, statement, convertedStatement, syntheticPdf } from './fixtures.js';
+import {
+  REF,
+  OTHER,
+  statement,
+  convertedStatement,
+  syntheticPdf,
+  approveAssessment,
+} from './fixtures.js';
 fs.mkdirSync('.cache/tests', { recursive: true });
 process.env.SCUPA_DATA_DIR = fs.mkdtempSync(path.resolve('.cache/tests/core-'));
 const util = await import('../src/core/util.js');
@@ -487,6 +494,7 @@ test(
         path.join(directory, 'current.json'),
         JSON.stringify({ schemaVersion: 1, files: [file] }),
       );
+      approveAssessment(directory, file);
       const parsed = parse();
       assert.deepEqual(parsed.stats.errors, []);
       assert.equal(parsed.records[0].paid, paid);
@@ -669,6 +677,7 @@ test('cancellation after extraction blocks the master merge', { skip: !pdfAvaila
   const directory = path.join(util.RAW, 'test_member', REF);
   fs.mkdirSync(directory, { recursive: true });
   fs.writeFileSync(path.join(directory, 'statement_1_demo.pdf'), syntheticPdf(statement()));
+  approveAssessment(directory, 'statement_1_demo.pdf');
   mergeRecords([record()], { masterPath: util.MASTER, reportsDir: util.REPORTS });
   const before = fs.readFileSync(util.MASTER);
   let steps = 0;

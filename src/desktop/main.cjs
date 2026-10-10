@@ -282,28 +282,32 @@ app
             if (error) throw new Error(error);
           } else {
             if (agent)
-              throw Object.assign(
-                new Error('Open SCUPA normally to review supporting documents.'),
-                { code: 'HUMAN_ACTION_REQUIRED' },
-              );
-            if (typeof options.supporting !== 'boolean')
+              throw Object.assign(new Error('Open SCUPA normally to review documents.'), {
+                code: 'HUMAN_ACTION_REQUIRED',
+              });
+            if (![null, 'supporting', 'assessment'].includes(options.classification))
               throw new Error('Invalid review decision.');
-            if (options.supporting) {
+            if (options.classification !== null) {
               await run('document-path', document);
+              const assessment = options.classification === 'assessment';
               const choice = await dialog.showMessageBox(window, {
                 type: 'question',
-                title: 'Mark as supporting document',
-                message: 'Have you viewed every page and confirmed this is an invoice or receipt?',
+                title: assessment ? 'Confirm Bupa assessment' : 'Mark as supporting document',
+                message: assessment
+                  ? 'Have you viewed every page and confirmed Bupa issued this assessment?'
+                  : 'Have you viewed every page and confirmed this is an invoice or receipt?',
                 detail:
                   document.file +
-                  '\n\nDo not use this for a Bupa statement. This PDF will be kept, but will not be used to calculate claim amounts. A changed PDF will require a new review.',
-                buttons: ['Cancel', 'Mark as supporting'],
+                  (assessment
+                    ? '\n\nAn invoice or receipt cannot establish a Bupa payment. Approve only an assessment issued by Bupa, with the correct claims and payment totals. A changed PDF will require a new review.'
+                    : '\n\nDo not use this for a Bupa statement. This PDF will be kept, but will not be used to calculate claim amounts. A changed PDF will require a new review.'),
+                buttons: ['Cancel', assessment ? 'Confirm assessment' : 'Mark as supporting'],
                 defaultId: 0,
                 cancelId: 0,
               });
               if (choice.response !== 1) return { ok: true, result: undefined };
             }
-            await run('review-document', { ...document, supporting: options.supporting });
+            await run('review-document', { ...document, classification: options.classification });
           }
           return { ok: true, result: undefined };
         }

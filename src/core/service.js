@@ -3,8 +3,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { DATA, HEADERS, loadConfig, saveConfig, atomicWrite, ensureDir } from './util.js';
 import { loadMaster, mergeRecords } from './merge.js';
-import { parseRawDir, pdfToText } from './parse.js';
-import { documentHash, resolveDocument, supportingReviews } from './documents.js';
+import { parseRawDir, parseStatementText, pdfToText } from './parse.js';
+import { documentHash, resolveDocument, documentReviews } from './documents.js';
 import { validatePdf } from './safety.js';
 import { toCsv } from './csv.js';
 import { ScupaError } from './errors.js';
@@ -85,10 +85,16 @@ export function archiveHelp() {
     for (const document of Array.isArray(parsed.documents) ? parsed.documents : []) {
       try {
         const absolute = reviewedDocumentPath(document);
-        const supporting =
-          supportingReviews(path.dirname(absolute))[path.basename(absolute)]?.sha256 ===
-          document.sha256;
-        documents.push({ file: document.file, sha256: document.sha256, supporting });
+        const reviews = documentReviews(path.dirname(absolute));
+        const supporting = reviews.supporting[path.basename(absolute)]?.sha256 === document.sha256;
+        const assessment = reviews.assessments[path.basename(absolute)]?.sha256 === document.sha256;
+        documents.push({
+          file: document.file,
+          sha256: document.sha256,
+          supporting,
+          assessment,
+          readable: document.readable === true,
+        });
       } catch {
         // Stale or invalid diagnostics cannot authorise a document review.
       }
@@ -111,23 +117,38 @@ export function reviewedDocumentPath({ file, sha256 }) {
 }
 
 /** Caller holds the archive lock. This decision never changes a PDF or master row. */
-export function reviewSupportingDocument({ file, sha256, supporting }) {
-  if (typeof supporting !== 'boolean')
-    throw new ScupaError('INVALID_INPUT', 'Choose whether this is a supporting document.');
+export function reviewDocument({ file, sha256, classification }) {
+  if (![null, 'supporting', 'assessment'].includes(classification))
+    throw new ScupaError('INVALID_INPUT', 'Choose a document classification.');
   const absolute = reviewedDocumentPath({ file, sha256 });
-  if (supporting && pdfToText(process.env.SCUPA_PDFTOTEXT, absolute).trim())
+  const text = classification === null ? '' : pdfToText(process.env.SCUPA_PDFTOTEXT, absolute);
+  if (classification === 'supporting' && text.trim())
     throw new ScupaError(
       'INVALID_INPUT',
       'Only image-only documents can be reviewed here. Statement parsing errors must be resolved.',
     );
+  if (classification === 'assessment') {
+    const records = parseStatementText(text, file.split('/')[0]);
+    if (!records.length || records.some((record) => record.errors.length))
+      throw new ScupaError(
+        'INVALID_INPUT',
+        'Only readable, valid assessments can be approved. Parsing errors must be resolved.',
+      );
+  }
+  reviewedDocumentPath({ file, sha256 });
   const directory = path.dirname(absolute);
-  const reviews = supportingReviews(directory);
-  if (supporting)
-    reviews[path.basename(absolute)] = { sha256, reviewedAt: new Date().toISOString() };
-  else delete reviews[path.basename(absolute)];
+  const reviews = documentReviews(directory);
+  const name = path.basename(absolute);
+  delete reviews.supporting[name];
+  delete reviews.assessments[name];
+  if (classification !== null)
+    reviews[classification === 'supporting' ? 'supporting' : 'assessments'][name] = {
+      sha256,
+      reviewedAt: new Date().toISOString(),
+    };
   atomicWrite(
     path.join(directory, 'document-reviews.json'),
-    JSON.stringify({ schemaVersion: 1, supporting: reviews }, null, 2),
+    JSON.stringify({ schemaVersion: 1, ...reviews }, null, 2),
   );
 }
 

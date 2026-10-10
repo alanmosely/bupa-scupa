@@ -3,7 +3,14 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { _electron as electron } from 'playwright-core';
-import { syntheticPdf, statement, convertedStatement, REF, OTHER } from '../test/fixtures.js';
+import {
+  syntheticPdf,
+  statement,
+  convertedStatement,
+  REF,
+  OTHER,
+  approveAssessment,
+} from '../test/fixtures.js';
 
 fs.mkdirSync('.cache/smoke', { recursive: true });
 const archive = fs.mkdtempSync(path.resolve('.cache/smoke/archive-'));
@@ -20,6 +27,22 @@ const app = await electron.launch({
 });
 try {
   const page = await app.firstWindow();
+  // Native dialogs are answered only for this synthetic archive.
+  await app.evaluate(({ dialog, shell }) => {
+    globalThis.reviewAnswer = 0;
+    globalThis.openedPdf = '';
+    dialog.showMessageBox = async (_window, options) => {
+      if (!['Mark as supporting document', 'Confirm Bupa assessment'].includes(options.title))
+        throw new Error('Unexpected dialog');
+      if (options.defaultId !== 0 || options.cancelId !== 0)
+        throw new Error('Review must default to cancellation');
+      return { response: globalThis.reviewAnswer, checkboxChecked: false };
+    };
+    shell.openPath = async (file) => {
+      globalThis.openedPdf = file;
+      return '';
+    };
+  });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.getByRole('heading', { name: 'Start with your Bupa login' }).waitFor();
@@ -48,6 +71,27 @@ try {
     await page.getByRole('button', { name: 'Refresh all claims', exact: true }).isEnabled(),
     true,
   );
+  await page.locator('#reparse').click();
+  await page.getByText('Some statements could not be safely parsed.', { exact: false }).waitFor();
+  assert.equal(fs.existsSync(path.join(archive, 'master', 'claims.csv')), false);
+  await page.locator('#error-help').click();
+  await page.getByRole('button', { name: 'View PDF', exact: true }).click();
+  await page
+    .getByText('PDF opened. Review every page and check who issued it before classifying it.')
+    .waitFor();
+  assert.equal(
+    await app.evaluate(() => globalThis.openedPdf),
+    path.join(directory, 'statement_1_demo.pdf'),
+  );
+  await page.getByRole('button', { name: 'Confirm Bupa assessment', exact: true }).click();
+  await page.getByText('Review decisions are shown below.', { exact: false }).waitFor();
+  assert.equal(fs.existsSync(path.join(directory, 'document-reviews.json')), false);
+  await app.evaluate(() => {
+    globalThis.reviewAnswer = 1;
+  });
+  await page.getByRole('button', { name: 'Confirm Bupa assessment', exact: true }).click();
+  await page.getByRole('button', { name: 'Undo assessment confirmation', exact: true }).waitFor();
+  await page.locator('#close-help').click();
   await page.locator('#reparse').click();
   await page.getByText('Done. 1 claims added, 0 updated.').waitFor();
   await page.waitForFunction(() => document.getElementById('claim-count').textContent === '1');
@@ -97,6 +141,7 @@ try {
     path.join(convertedDirectory, 'statement_1_converted.pdf'),
     syntheticPdf(convertedStatement({ ref: OTHER })),
   );
+  approveAssessment(convertedDirectory, 'statement_1_converted.pdf');
   await page.locator('#reparse').click();
   await page.waitForFunction(() => document.getElementById('claim-count').textContent === '2');
   const convertedRow = page.locator('#claims tr').filter({ hasText: OTHER });
@@ -122,6 +167,8 @@ try {
         .replace('02/01/2000', '03/01/2000'),
     ),
   );
+  approveAssessment(directory, 'statement_1_demo.pdf');
+  approveAssessment(convertedDirectory, 'statement_1_converted.pdf');
   await page.locator('#reparse').click();
   await page.getByText('Done. 0 claims added, 2 updated.').waitFor();
   await page.waitForFunction(() => !document.getElementById('reparse').disabled);
@@ -138,18 +185,9 @@ try {
   await page.locator('#reparse').click();
   await page.getByText('Done. 0 claims added, 0 updated.').waitFor();
   assert.equal(await page.locator('#changes').isVisible(), false, 'No-op clears previous changes');
-  // Native dialogs are answered only for this synthetic archive.
-  await app.evaluate(({ dialog, shell }) => {
+  await app.evaluate(() => {
     globalThis.reviewAnswer = 0;
     globalThis.openedPdf = '';
-    dialog.showMessageBox = async (_window, options) => {
-      if (options.title !== 'Mark as supporting document') throw new Error('Unexpected dialog');
-      return { response: globalThis.reviewAnswer, checkboxChecked: false };
-    };
-    shell.openPath = async (file) => {
-      globalThis.openedPdf = file;
-      return '';
-    };
   });
   const scan = path.join(directory, 'statement_2_scan.pdf');
   const scanBytes = syntheticPdf('');
@@ -164,12 +202,22 @@ try {
     'Failed parsing shows no changes',
   );
   await page.locator('#error-help').click();
-  await page.getByRole('button', { name: 'View PDF', exact: true }).click();
-  await page.getByText('PDF opened. Review every page before marking it as supporting.').waitFor();
+  await page
+    .locator('#help-issues > li')
+    .filter({ hasText: 'statement_2_scan.pdf' })
+    .getByRole('button', { name: 'View PDF', exact: true })
+    .click();
+  await page
+    .getByText('PDF opened. Review every page and check who issued it before classifying it.')
+    .waitFor();
   assert.equal(await app.evaluate(() => globalThis.openedPdf), scan);
   await page.getByRole('button', { name: 'Mark as supporting document', exact: true }).click();
   await page.getByText('Review decisions are shown below.', { exact: false }).waitFor();
-  assert.equal(fs.existsSync(reviewFile), false, 'Cancelling the review records no decision');
+  assert.equal(
+    JSON.parse(fs.readFileSync(reviewFile, 'utf8')).supporting['statement_2_scan.pdf'],
+    undefined,
+    'Cancelling the review records no decision',
+  );
   await app.evaluate(() => {
     globalThis.reviewAnswer = 1;
   });
@@ -188,6 +236,23 @@ try {
   await page.getByText('Done. 0 claims added, 0 updated.').waitFor();
   assert.deepEqual(fs.readFileSync(path.join(archive, 'master', 'claims.csv')), masterBeforeReview);
   assert.deepEqual(fs.readFileSync(scan), scanBytes);
+  const assessment = path.join(directory, 'statement_1_demo.pdf');
+  const assessmentBytes = fs.readFileSync(assessment);
+  fs.writeFileSync(assessment, syntheticPdf(statement().replace(/Total payment[^\n]+/, '')));
+  await page.locator('#reparse').click();
+  await page.getByText('Some statements could not be safely parsed.', { exact: false }).waitFor();
+  await page.locator('#error-help').click();
+  await page.getByText(/\[MISSING_PAYMENT_TOTAL\]/).waitFor();
+  assert.match(await page.locator('#help-issues').textContent(), /MISSING_PAYMENT_TOTAL/);
+  await page.getByRole('button', { name: 'Confirm Bupa assessment', exact: true }).click();
+  await page
+    .getByText('Only readable, valid assessments can be approved.', { exact: false })
+    .waitFor();
+  assert.deepEqual(fs.readFileSync(path.join(archive, 'master', 'claims.csv')), masterBeforeReview);
+  await page.locator('#close-help').click();
+  fs.writeFileSync(assessment, assessmentBytes);
+  await page.locator('#reparse').click();
+  await page.getByText('Done. 0 claims added, 0 updated.').waitFor();
   await page.screenshot({ path: '.cache/smoke/dashboard.png', fullPage: true });
   if (process.argv.includes('--cancel-parse')) {
     const master = path.join(archive, 'master', 'claims.csv');
@@ -247,4 +312,38 @@ try {
   throw error;
 } finally {
   await app.close();
+}
+
+const agentApp = await electron.launch({
+  ...(executablePath ? { executablePath } : {}),
+  args: [
+    ...(executablePath ? [] : ['.']),
+    '--agent',
+    'sync',
+    '--data-dir',
+    archive,
+    '--output',
+    path.join(path.dirname(archive), path.basename(archive) + '-agent.json'),
+  ],
+  env: { ...process.env, SCUPA_APP_DIR: path.join(archive, 'agent-preferences') },
+});
+try {
+  const page = await agentApp.firstWindow();
+  await page.waitForFunction(() => !!window.scupa);
+  for (const classification of ['assessment', 'supporting', null]) {
+    const result = await page.evaluate(
+      (classification) =>
+        window.scupa.call('review-document', {
+          file: 'not-an-authorised-document',
+          sha256: '',
+          classification,
+        }),
+      classification,
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'HUMAN_ACTION_REQUIRED');
+  }
+  console.log('Agent-mode desktop cannot grant or undo document classifications. No sync started.');
+} finally {
+  await agentApp.close();
 }

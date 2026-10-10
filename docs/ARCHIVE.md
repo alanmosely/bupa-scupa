@@ -56,6 +56,14 @@ Open **Archive help** to see affected files. Keep these diagnostics private.
 Parsing errors block the merge, leaving the master unchanged. If Bupa changes
 its statement format, retain the PDFs and try a newer SCUPA release.
 
+Before a new assessment can supply payment amounts, open **Archive help → View
+PDF**, read every page, and choose **Confirm Bupa assessment** only if Bupa issued
+it and the claims and totals are correct. Portal labels and statement-shaped text
+do not prove who issued a document. Then **Recheck saved PDFs**. Confirmed,
+unchanged PDFs are reused automatically; a new filename or changed contents needs
+a new confirmation. Previously saved PDFs need this confirmation once too. Pending
+reviews leave existing master records unchanged.
+
 Some provider receipts arrive with Bupa's statement tag but contain only images.
 For these, **Archive help → View PDF** opens the original in your PDF viewer.
 Read every page. If it is an invoice or receipt, choose **Mark as supporting
@@ -63,10 +71,13 @@ document** and confirm, then close Archive help and **Recheck saved PDFs**.
 Do not use this for Bupa statements; image-only assessments still require review
 outside SCUPA and cannot supply payment amounts to the parser.
 
-The decision is saved beside the PDF in `document-reviews.json`, tied to that
+Both assessment confirmations and supporting decisions are saved beside the PDF
+in `document-reviews.json`, tied to that
 claim, filename and SHA-256 content hash. The PDF is never renamed or changed.
 A different revision requires a fresh review. **Undo supporting classification**
 removes the decision; the next parse will stop on the unreadable PDF again.
+**Undo assessment confirmation** similarly blocks further imports from that PDF,
+without removing historical master records. Agents cannot confirm assessments.
 These decisions are included when you back up the entire archive. Text extraction
 failures and malformed text statements cannot be bypassed with this action.
 

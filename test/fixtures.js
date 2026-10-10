@@ -1,6 +1,26 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
 // Entirely synthetic. No portal captures or personal records belong in this file.
 export const REF = 'CL000101000001';
 export const OTHER = 'CL000101000002';
+// Model an explicit human decision for synthetic fixtures, never production imports.
+export function approveAssessment(directory, filename) {
+  const file = path.join(directory, 'document-reviews.json');
+  const reviews = fs.existsSync(file)
+    ? JSON.parse(fs.readFileSync(file, 'utf8'))
+    : { schemaVersion: 1, supporting: {} };
+  reviews.assessments ??= {};
+  delete reviews.supporting[filename];
+  reviews.assessments[filename] = {
+    sha256: crypto
+      .createHash('sha256')
+      .update(fs.readFileSync(path.join(directory, filename)))
+      .digest('hex'),
+    reviewedAt: '2000-01-02T00:00:00.000Z',
+  };
+  fs.writeFileSync(file, JSON.stringify(reviews));
+}
 export function statement({
   ref = REF,
   claimed = '100.00',

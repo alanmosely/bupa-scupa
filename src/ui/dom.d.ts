@@ -16,7 +16,10 @@ interface UiCommands {
   export: UiCommand<undefined, ReturnType<typeof import('../core/service.js').exportCsv> | null>;
   'open-folder': UiCommand<undefined, undefined>;
   'open-document': UiCommand<{ file: string; sha256: string }, undefined>;
-  'review-document': UiCommand<{ file: string; sha256: string; supporting: boolean }, undefined>;
+  'review-document': UiCommand<
+    { file: string; sha256: string; classification: 'assessment' | 'supporting' | null },
+    undefined
+  >;
   cancel: UiCommand<undefined, undefined>;
   confirm: UiCommand<{ accepted: boolean }, undefined>;
 }

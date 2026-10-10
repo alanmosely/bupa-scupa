@@ -29,6 +29,12 @@ listed by `schema`. Do not parse progress messages as results.
 
 ## Commands
 
+New assessment PDFs need a human to view and confirm them in the normal desktop
+app's **Archive help** before `parse` or `sync` can import their payment amounts.
+An unconfirmed or changed PDF produces `PARSE_FAILED` and leaves the master
+unchanged. The agent interface cannot approve PDFs; unchanged confirmations are
+reused by later runs. See [archive recovery](docs/ARCHIVE.md#parsing-errors).
+
 | Command                 | Access                 | Result                                                                                   |
 | ----------------------- | ---------------------- | ---------------------------------------------------------------------------------------- |
 | `schema`                | Read                   | Commands, options, API version and exit codes                                            |
