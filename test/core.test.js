@@ -132,19 +132,23 @@ test('legacy resume requires a recent complete current selection and keeps revis
   fs.writeFileSync(path.join(directory, revision), syntheticPdf(statement()));
   const current = path.join(directory, 'current.json');
   fs.writeFileSync(current, JSON.stringify({ schemaVersion: 1, files: [revision] }));
+  const now = Date.parse('2000-01-02T00:00:00Z');
+  const completedAt = new Date(now - 60000);
+  fs.utimesSync(current, completedAt, completedAt);
   const extra = { ...file, filename: 'statement_2_Benefit.pdf' };
   assert.equal(
-    downloadProgress(directory, [file, extra]).reuse(file),
+    downloadProgress(directory, [file, extra], { now }).reuse(file),
     null,
     'Partial selections cannot be adopted',
   );
   assert.equal(
     downloadProgress(directory, [file], {
-      lastSync: new Date(Date.now() + 1000).toISOString(),
+      now,
+      lastSync: new Date(now + 1000).toISOString(),
     }).reuse(file),
     null,
   );
-  assert.equal(downloadProgress(directory, [file]).reuse(file), revision);
+  assert.equal(downloadProgress(directory, [file], { now }).reuse(file), revision);
   assert.deepEqual(JSON.parse(fs.readFileSync(current, 'utf8')).files, [revision]);
 });
 beforeEach(() =>
