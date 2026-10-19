@@ -30,6 +30,17 @@ test('invalid flags and relative paths have a stable failure code', () => {
     false,
   );
 });
+test('agent errors retain the retryability of portal HTTP failures', () => {
+  for (const retryable of [true, false]) {
+    const result = envelope('sync', null, {
+      code: 'BUPA_REQUEST_FAILED',
+      message: 'Bupa request failed.',
+      retryable,
+    });
+    assert.equal(result.error?.retryable, retryable);
+  }
+});
+
 test('machine output cannot overwrite a file or the archive', () => {
   fs.mkdirSync('.cache/tests', { recursive: true });
   const p = fs.mkdtempSync(path.resolve('.cache/tests/output-'));

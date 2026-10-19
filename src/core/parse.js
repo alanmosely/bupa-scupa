@@ -378,6 +378,10 @@ export function parseRawDir({
   const readText = extractText || ((file) => pdfToText(bin, file));
   const records = [];
   const documents = [];
+  const fatalErrors = [];
+  const pending = new Map();
+  const defer = (member, claimRef) =>
+    pending.set(`${member}/${claimRef}`, { member, claim_ref: claimRef });
   const cachedText = new Map();
   /** @type {{statements: number, duplicates: number, stubs: number, errors: string[]}} */
   const stats = { statements: 0, duplicates: 0, stubs: 0, errors: [] };
@@ -390,6 +394,7 @@ export function parseRawDir({
     if (!fs.statSync(memberDir).isDirectory()) continue;
     if (!Object.hasOwn(cfg.members, member)) {
       stats.errors.push(`Unknown member archive directory: ${member}`);
+      fatalErrors.push(stats.errors.at(-1));
       continue;
     }
     for (const claimId of fs.readdirSync(memberDir)) {
@@ -401,6 +406,7 @@ export function parseRawDir({
         reviews = documentReviews(claimDir);
       } catch (error) {
         stats.errors.push(`${member}/${claimId}: ${error.message} — refusing to merge`);
+        fatalErrors.push(stats.errors.at(-1));
         continue;
       }
       // Portal tags supporting invoices as statements too — exclude them by label
@@ -422,6 +428,7 @@ export function parseRawDir({
           text = readText(path.join(claimDir, f));
         } catch (e) {
           stats.errors.push(`${member}/${claimId}/${f}: ${e.message}`);
+          defer(member, claimId);
           continue;
         }
         const hash = `${member}:${md5(text)}`;
@@ -439,13 +446,29 @@ export function parseRawDir({
           /(?:^|\n|[ \t]{2,})[ \t]*(?:(?:tax[ \t]+)?invoice\b|receipt\b|order[ \t]+(?:summary|details|confirmation)\b)/i;
         const statementMarker =
           /\b(?:For\s+Claim|(?:claim|payment)\s+(?:statement|summary)|Total\s+payment\s+made)\b/i;
+        const standardAssessment =
+          /\bBupa\s+Global\b/i.test(text.slice(0, 12000)) &&
+          /\b(?:Bupa\s+Insurance\s+Limited|bupaglobal\.com)\b/i.test(text) &&
+          !supportingTitle.test(text.slice(0, Math.max(0, text.search(/For\s+Claim/i))));
         if (parsed.length || !text.trim()) {
           const sha256 = documentHash(path.join(claimDir, f));
-          documents.push({ file: `${member}/${claimId}/${f}`, sha256, readable: !!text.trim() });
+          const needsConfirmation =
+            parsed.length > 0 && !standardAssessment && reviews.assessments[f]?.sha256 !== sha256;
+          documents.push({
+            file: `${member}/${claimId}/${f}`,
+            sha256,
+            readable: !!text.trim(),
+            needsConfirmation,
+            automatic: standardAssessment,
+            needsAttention:
+              needsConfirmation ||
+              parsed.some((rec) => rec.errors.length) ||
+              (!text.trim() && reviews.supporting[f]?.sha256 !== sha256),
+          });
           if (!text.trim() && reviews.supporting[f]?.sha256 === sha256) supportingStatements.add(f);
-          // Portal tags and statement-shaped text do not establish insurer authorship.
-          // Authorise each PDF independently of the extracted-text cache.
-          if (parsed.length && reviews.assessments[f]?.sha256 !== sha256)
+          // Routine Bupa layouts import automatically. Unfamiliar documents still
+          // need a decision bound to their own bytes, independent of cached text.
+          if (needsConfirmation)
             parsed = parsed.map((rec) => ({
               ...rec,
               errors: [
@@ -460,10 +483,26 @@ export function parseRawDir({
         if (!parsed.length && supportingTitle.test(text) && !statementMarker.test(text)) {
           supportingStatements.add(f);
         }
-        if (!parsed.length && !supportingStatements.has(f))
+        if (!parsed.length && !supportingStatements.has(f)) {
+          if (text.trim())
+            documents.push({
+              file: `${member}/${claimId}/${f}`,
+              sha256: documentHash(path.join(claimDir, f)),
+              readable: true,
+              needsConfirmation: false,
+              automatic: false,
+              needsAttention: true,
+            });
           stats.errors.push(
             `${member}/${claimId}/${f}: statement format is not recognised — refusing to merge`,
           );
+          defer(member, claimId);
+          for (const match of text.matchAll(/For\s+Claim\s+(CL\d{12})/g)) defer(member, match[1]);
+        }
+        if (parsed.some((rec) => rec.errors.length)) {
+          defer(member, claimId);
+          for (const rec of parsed) defer(member, rec.claim_ref);
+        }
         for (const original of parsed) {
           const rec = {
             ...original,
@@ -535,6 +574,7 @@ export function parseRawDir({
       stats.errors.push(
         `${r.claim_ref} appears in both ${prev.member} and ${r.member} archives — refusing ambiguous ownership`,
       );
+      fatalErrors.push(stats.errors.at(-1));
       continue;
     }
     if (prev && r.stub && !prev.stub) continue;
@@ -546,15 +586,36 @@ export function parseRawDir({
     }
     byRef.set(r.claim_ref, r);
   }
-  const out = [...byRef.values()].map(({ source: _source, ...record }) => record);
+  const out = [...byRef.values()]
+    .filter((record) => !pending.has(`${record.member}/${record.claim_ref}`))
+    .map(({ source: _source, ...record }) => record);
+  for (const item of pending.values())
+    out.push({
+      ...Object.fromEntries(HEADERS.map((field) => [field, ''])),
+      ...item,
+      received_date: refToDate(item.claim_ref),
+      status: CLAIM_STATUS.awaiting,
+      notes: 'Statement needs attention — payment amounts have not been imported',
+      errors: [],
+      warnings: ['Statement needs attention in Archive help'],
+      stub: true,
+    });
+  stats.stubs = out.filter((record) => record.stub).length;
   checkCancelled();
   atomicWrite(
     parsedPath,
     JSON.stringify(
-      { generatedAt: new Date().toISOString(), stats, records: out, documents },
+      {
+        generatedAt: new Date().toISOString(),
+        stats,
+        records: out,
+        documents,
+        pending: [...pending.values()],
+        fatalErrors,
+      },
       null,
       1,
     ),
   );
-  return { records: out, stats };
+  return { records: out, stats, pending: [...pending.values()], fatalErrors };
 }

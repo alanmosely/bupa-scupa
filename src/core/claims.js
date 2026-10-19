@@ -105,8 +105,14 @@ export const assessmentKey = (row) =>
 export const assessmentReviewed = (row, followUp) =>
   followUp.reviewed && followUp.assessmentKey === assessmentKey(row);
 /** @param {import('./model.js').ClaimRow} row @param {FollowUp} followUp */
-export function attentionReasons(row, followUp = emptyFollowUp(), today = localToday()) {
+export function attentionReasons(
+  row,
+  followUp = emptyFollowUp(),
+  today = localToday(),
+  importPending = false,
+) {
   const reasons = [];
+  if (importPending) reasons.push('Statement needs attention');
   if (followUp.followUpOn)
     reasons.push(followUp.followUpOn <= today ? 'Follow-up due' : 'Follow-up scheduled');
   if (followUp.pinned) reasons.push('Pinned');
@@ -127,7 +133,7 @@ export function attentionReasons(row, followUp = emptyFollowUp(), today = localT
   return reasons;
 }
 /** Shared by the desktop list and CSV export. Currency amounts are sorted within currency. */
-export function queryClaims(rows, query = {}, followUps = {}, members = {}) {
+export function queryClaims(rows, query = {}, followUps = {}, members = {}, pending = []) {
   validateQuery(query);
   const dateField = query.dateField || 'received_date';
   const sort = query.sort || 'received_date';
@@ -146,7 +152,13 @@ export function queryClaims(rows, query = {}, followUps = {}, members = {}) {
             .join(' ')
             .toLowerCase()
             .includes(search)) &&
-        (query.view !== 'attention' || attentionReasons(row, followUps[row.claim_ref]).length > 0),
+        (query.view !== 'attention' ||
+          attentionReasons(
+            row,
+            followUps[row.claim_ref],
+            undefined,
+            pending.includes(row.claim_ref),
+          ).length > 0),
     )
     .sort((a, b) => {
       let comparison;

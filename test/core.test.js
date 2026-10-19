@@ -16,8 +16,14 @@ process.env.SCUPA_DATA_DIR = fs.mkdtempSync(path.resolve('.cache/tests/core-'));
 const util = await import('../src/core/util.js');
 const { parseStatementText, parseRawDir, pdfToText } = await import('../src/core/parse.js');
 const { mergeRecords, loadMaster } = await import('../src/core/merge.js');
-const { archivePdf, verifyMemberRefs, retry, resolveNavigationHref } =
-  await import('../src/core/safety.js');
+const {
+  archivePdf,
+  verifyMemberRefs,
+  retry,
+  resolveNavigationHref,
+  validatePortalResponse,
+  describeDownload,
+} = await import('../src/core/safety.js');
 const {
   setup,
   acquireLock,
@@ -30,7 +36,8 @@ const {
   archiveHelp,
 } = await import('../src/core/service.js');
 const { parseCsv, toCsv } = await import('../src/core/csv.js');
-const { uniqueMemberHref, selectClaims } = await import('../src/core/portal.js');
+const { uniqueMemberHref, selectClaims, downloadPdf } = await import('../src/core/portal.js');
+const { downloadProgress } = await import('../src/core/download-progress.js');
 const pdfAvailable = fs.existsSync('vendor/xpdf/pdftotext.exe');
 if (process.env.SCUPA_REQUIRE_PDF_TESTS === '1')
   assert.ok(
@@ -48,6 +55,98 @@ const opts = () => {
   return { masterPath: path.join(p, 'claims.csv'), reportsDir: path.join(p, 'reports') };
 };
 const record = (options) => parseStatementText(statement(options), 'test_member')[0];
+test('download checkpoints resume individual validated PDFs and detect source or byte changes', () => {
+  const directory = folder();
+  const file = {
+    href: 'https://membersworld.bupaglobal.com/api/sitecore/Plan/DownloadFile?fileId=one',
+    filename: 'statement_1_Benefit.pdf',
+  };
+  const second = {
+    ...file,
+    href: file.href.replace('one', 'two'),
+    filename: 'statement_2_Benefit.pdf',
+  };
+  const body = syntheticPdf(statement());
+  fs.writeFileSync(path.join(directory, file.filename), body);
+  const progress = downloadProgress(directory, [file, second]);
+  progress.save(file, file.filename);
+  const resumed = downloadProgress(directory, [file, second]);
+  assert.equal(resumed.reuse(file), file.filename);
+  for (const href of [
+    file.href.replace('membersworld.bupaglobal.com', 'example.invalid'),
+    file.href.replace('DownloadFile?', 'DownloadFileOther?'),
+  ])
+    assert.throws(
+      () => downloadProgress(directory, [{ ...file, href }]),
+      /Unexpected document link/,
+    );
+  assert.equal(resumed.reuse(second), null, 'An unfinished document is retried');
+  assert.equal(
+    resumed.reuse({ ...file, href: second.href }),
+    null,
+    'Changed attachment IDs are downloaded',
+  );
+  const text = fs.readFileSync(path.join(directory, 'download-progress.json'), 'utf8');
+  assert.doesNotMatch(text, /https:|fileId|membersworld/);
+  fs.writeFileSync(path.join(directory, file.filename), syntheticPdf(statement({ paid: '90.00' })));
+  assert.equal(
+    downloadProgress(directory, [file]).reuse(file),
+    null,
+    'Changed valid PDF bytes are refused',
+  );
+  fs.writeFileSync(path.join(directory, file.filename), body);
+  fs.unlinkSync(path.join(directory, file.filename));
+  assert.equal(downloadProgress(directory, [file]).reuse(file), null, 'Missing PDFs are retried');
+});
+
+test('successful sync, expiry and full refresh invalidate download checkpoints', () => {
+  const directory = folder();
+  const file = {
+    href: 'https://membersworld.bupaglobal.com/api/sitecore/Plan/DownloadFile?fileId=one',
+    filename: 'statement_1_Benefit.pdf',
+  };
+  fs.writeFileSync(path.join(directory, file.filename), syntheticPdf(statement()));
+  downloadProgress(directory, [file]).save(file, file.filename);
+  const now = Date.now() + 1000;
+  assert.equal(
+    downloadProgress(directory, [file], { lastSync: new Date(now).toISOString(), now }).reuse(file),
+    null,
+  );
+  assert.equal(downloadProgress(directory, [file], { now: now + 25 * 3600000 }).reuse(file), null);
+  assert.equal(downloadProgress(directory, [file], { lastSync: 'invalid' }).reuse(file), null);
+  assert.equal(downloadProgress(directory, [file], { fullRefresh: true }).reuse(file), null);
+  assert.equal(
+    downloadProgress(directory, [file]).reuse(file),
+    null,
+    'A failed full refresh cannot revive its old checkpoint',
+  );
+});
+
+test('legacy resume requires a recent complete current selection and keeps revision filenames', () => {
+  const directory = folder();
+  const file = {
+    href: 'https://membersworld.bupaglobal.com/api/sitecore/Plan/DownloadFile?fileId=one',
+    filename: 'statement_1_Benefit.pdf',
+  };
+  const revision = file.filename.slice(0, -4) + '__revision_' + 'a'.repeat(32) + '.pdf';
+  fs.writeFileSync(path.join(directory, revision), syntheticPdf(statement()));
+  const current = path.join(directory, 'current.json');
+  fs.writeFileSync(current, JSON.stringify({ schemaVersion: 1, files: [revision] }));
+  const extra = { ...file, filename: 'statement_2_Benefit.pdf' };
+  assert.equal(
+    downloadProgress(directory, [file, extra]).reuse(file),
+    null,
+    'Partial selections cannot be adopted',
+  );
+  assert.equal(
+    downloadProgress(directory, [file], {
+      lastSync: new Date(Date.now() + 1000).toISOString(),
+    }).reuse(file),
+    null,
+  );
+  assert.equal(downloadProgress(directory, [file]).reuse(file), revision);
+  assert.deepEqual(JSON.parse(fs.readFileSync(current, 'utf8')).files, [revision]);
+});
 beforeEach(() =>
   util.saveConfig({
     ...util.loadConfig(),
@@ -279,7 +378,7 @@ test('unrecognised or conflicting header currency blocks archive parsing', () =>
 test('adjustment history is not added to current assessment', () => {
   const text =
     `For Claim ${REF}\n01/01/2000    Consultation    £90.00    £90.00\nTotal adjustment payment made to you £10.00\n` +
-    statement().split('\n').slice(2).join('\n');
+    statement().slice(statement().indexOf('For treatment at'));
   const r = parseStatementText(text, 'test_member')[0];
   assert.equal(r.claimed, '100.0');
   assert.equal(r.paid, '80.0');
@@ -363,16 +462,16 @@ test('incomplete benefit rows block the whole batch without changing the master'
       extractText: () => text,
     });
     assert.ok(parsed.stats.errors.some((error) => error.includes('UNPARSED_BENEFIT')));
-    assert.ok(parsed.records[0].errors.some((error) => error.code === 'UNPARSED_BENEFIT'));
+    assert.equal(parsed.records[0].stub, true);
+    assert.deepEqual(parsed.pending, [{ member: 'test_member', claim_ref: REF }]);
+    const invalid = parseStatementText(text, 'test_member');
+    assert.ok(invalid[0].errors.some((error) => error.code === 'UNPARSED_BENEFIT'));
     // Wording is presentation only; neither warnings nor error prose control the gate.
-    parsed.records[0].warnings = [];
-    parsed.records[0].errors.forEach((error) => {
+    invalid[0].warnings = [];
+    invalid[0].errors.forEach((error) => {
       error.message = 'Changed wording';
     });
-    assert.throws(
-      () => mergeRecords([record({ ref: OTHER }), ...parsed.records], o),
-      /UNPARSED_BENEFIT/,
-    );
+    assert.throws(() => mergeRecords([record({ ref: OTHER }), ...invalid], o), /UNPARSED_BENEFIT/);
     assert.deepEqual(fs.readFileSync(o.masterPath), before);
   }
 });
@@ -575,6 +674,24 @@ test('navigation is same-origin and tolerates UK spelling and locale prefix', ()
     null,
   );
 });
+test('dependant claims navigation requires its member ID despite earlier global links', () => {
+  const origin = 'https://membersworld.bupaglobal.com';
+  const links = [
+    { href: '/en/my-claims', text: 'My claims' },
+    { href: '/my-claims', text: 'My claims' },
+    { href: '/en/my-claims?memberid=another', text: 'View all claims' },
+    { href: 'https://example.invalid/my-claims?memberid=second', text: 'View all claims' },
+    { href: '/en/my-claims?memberid=second&MemberId=another', text: 'View all claims' },
+    { href: '/en/my-claims?MemberId=second', text: 'View all claims' },
+  ];
+  assert.equal(
+    resolveNavigationHref(links, '/my-claims', origin, 'second'),
+    '/en/my-claims?MemberId=second',
+  );
+  assert.equal(resolveNavigationHref(links.slice(0, -1), '/my-claims', origin, 'second'), null);
+  assert.equal(resolveNavigationHref(links, '/my-claims', origin), '/en/my-claims');
+});
+
 test('exact member links reject ambiguous and substring matches', () => {
   const links = [
     { href: '/member/1', text: 'Example Person' },
@@ -622,6 +739,247 @@ test('retries stop for permanent errors', async () => {
       },
       { delayMs: 1 },
     ),
+  );
+  assert.equal(calls, 1);
+});
+
+test('download diagnostics classify content without retaining text or authentication data', () => {
+  const secret = '<html><form><input name="token" value="private-test-value"></form></html>';
+  const info = describeDownload(Buffer.from(secret), 200, 'text/html; charset=UTF-8');
+  assert.equal(info.format, 'html');
+  assert.equal(info.pdfHeader, false);
+  assert.equal(info.pdfTrailer, false);
+  assert.doesNotMatch(JSON.stringify(info), /private-test-value|token|<form/);
+  assert.equal(describeDownload(Buffer.alloc(0), 200).format, 'empty');
+  assert.equal(describeDownload(Buffer.from([0xff, 0xd8, 0xff]), 200).format, 'jpeg');
+});
+
+test('invalid direct downloads fall back to the browser and still require a complete PDF', async () => {
+  const href =
+    'https://membersworld.bupaglobal.com/api/sitecore/Plan/DownloadFile?fileId=synthetic';
+  const pdf = syntheticPdf(statement());
+  for (const first of [
+    Buffer.from('<html>Temporarily unavailable</html>'),
+    Buffer.from('%PDF-1.4\ntruncated'),
+  ]) {
+    const invalid = [];
+    let disposed = 0,
+      browserRequests = 0;
+    const context = {
+      request: {
+        get: async () => ({
+          status: () => 200,
+          headers: () => ({ 'content-type': 'application/pdf' }),
+          url: () => href,
+          body: async () => first,
+          dispose: async () => {
+            disposed++;
+          },
+        }),
+      },
+    };
+    const page = {
+      evaluate: async () => {
+        browserRequests++;
+        return {
+          status: 200,
+          url: href,
+          base64: pdf.toString('base64'),
+          contentType: 'application/pdf',
+          tooLarge: false,
+        };
+      },
+    };
+    assert.deepEqual(
+      await downloadPdf(page, context, href, { onInvalid: (details) => invalid.push(details) }),
+      pdf,
+    );
+    assert.equal(disposed, 1);
+    assert.equal(browserRequests, 1);
+    assert.equal(invalid.length, 1);
+    assert.equal(invalid[0].transport, 'request-context');
+  }
+});
+
+test('invalid responses from both transports remain refused with useful safe diagnostics', async () => {
+  const href =
+    'https://membersworld.bupaglobal.com/api/sitecore/Plan/DownloadFile?fileId=synthetic';
+  const body = Buffer.from('<html>Private response text must not be retained</html>');
+  const invalid = [];
+  const context = {
+    request: {
+      get: async () => ({
+        status: () => 200,
+        headers: () => ({ 'content-type': 'text/html' }),
+        url: () => href,
+        body: async () => body,
+        dispose: async () => {},
+      }),
+    },
+  };
+  const page = {
+    evaluate: async () => ({
+      status: 200,
+      url: href,
+      base64: body.toString('base64'),
+      contentType: 'text/html',
+      tooLarge: false,
+    }),
+  };
+  await assert.rejects(
+    () => downloadPdf(page, context, href, { onInvalid: (details) => invalid.push(details) }),
+    (error) => {
+      assert.equal(error.code, 'INVALID_PDF_DOWNLOAD');
+      assert.match(error.message, /HTTP 200; text\/html; html/);
+      assert.doesNotMatch(error.message, /Private response text/);
+      assert.equal(error.retryable, true);
+      return true;
+    },
+  );
+  assert.equal(invalid.length, 2);
+  assert.doesNotMatch(JSON.stringify(invalid), /Private response text/);
+});
+
+test('login bodies trigger sign-in recovery even with a PDF content type', async () => {
+  const href =
+    'https://membersworld.bupaglobal.com/api/sitecore/Plan/DownloadFile?fileId=synthetic';
+  let disposed = false;
+  const context = {
+    request: {
+      get: async () => ({
+        status: () => 200,
+        headers: () => ({ 'content-type': 'application/pdf' }),
+        url: () => href,
+        body: async () => Buffer.from('<html><input type="password"></html>'),
+        dispose: async () => {
+          disposed = true;
+        },
+      }),
+    },
+  };
+  const page = { evaluate: async () => assert.fail('Must pause for manual sign-in') };
+  await assert.rejects(() => downloadPdf(page, context, href), { code: 'SESSION_EXPIRED' });
+  assert.equal(disposed, true);
+});
+
+test('browser fallback refuses redirects, oversized bodies and foreign download links', async () => {
+  const href =
+    'https://membersworld.bupaglobal.com/api/sitecore/Plan/DownloadFile?fileId=synthetic';
+  const context = {
+    request: {
+      get: async () => ({
+        status: () => 200,
+        headers: () => ({}),
+        url: () => href,
+        body: async () => Buffer.alloc(0),
+        dispose: async () => {},
+      }),
+    },
+  };
+  await assert.rejects(
+    () => downloadPdf({ evaluate: async () => ({ tooLarge: true }) }, context, href),
+    { code: 'INVALID_DOWNLOAD' },
+  );
+  await assert.rejects(
+    () =>
+      downloadPdf(
+        { evaluate: async () => ({ tooLarge: false, status: 0, url: href, loginPage: true }) },
+        context,
+        href,
+      ),
+    { code: 'SESSION_EXPIRED' },
+  );
+  await assert.rejects(() => downloadPdf({}, {}, 'https://example.invalid/document.pdf'), {
+    code: 'INVALID_DOWNLOAD',
+  });
+});
+
+test('portal errors distinguish rate limits, server failures and actual expired sessions', () => {
+  const response = { status: 200, url: 'https://membersworld.bupaglobal.com/api/example' };
+  assert.doesNotThrow(() => validatePortalResponse(response, 'claim details'));
+  for (const status of [403, 404, 429, 500, 503]) {
+    assert.throws(
+      () => validatePortalResponse({ ...response, status, retryAfter: '2' }, 'claim details'),
+      (error) => {
+        assert.equal(error.code, status === 429 ? 'BUPA_RATE_LIMITED' : 'BUPA_REQUEST_FAILED');
+        assert.equal(error.retryable, status === 429 || status >= 500);
+        assert.equal(error.retryAfterMs, 2000);
+        assert.match(error.message, new RegExp(`HTTP ${status}`));
+        assert.doesNotMatch(error.message, /session expired|api\/example/i);
+        return true;
+      },
+    );
+  }
+  for (const change of [
+    { status: 401 },
+    { status: 302, url: '/sign-in' },
+    { url: 'https://example.invalid/authenticate' },
+    { loginPage: true },
+  ])
+    assert.throws(
+      () => validatePortalResponse({ ...response, ...change }, 'claim details'),
+      (error) => {
+        assert.equal(error.code, 'SESSION_EXPIRED');
+        assert.equal(error.retryable, false);
+        assert.doesNotMatch(error.message, /example.invalid|api\/example/);
+        return true;
+      },
+    );
+});
+
+test('retry respects server cooldowns and increases its backoff', async () => {
+  const delays = [];
+  let calls = 0;
+  const result = await retry(
+    async () => {
+      if (++calls < 4) throw Object.assign(new Error('Temporary failure'), { retryAfterMs: 3000 });
+      return 'recovered';
+    },
+    {
+      attempts: 4,
+      delayMs: 1000,
+      wait: async (ms) => {
+        delays.push(ms);
+      },
+    },
+  );
+  assert.equal(result, 'recovered');
+  assert.deepEqual(delays, [3000, 3000, 4000]);
+});
+
+test('long server cooldowns stop without making an early request', async () => {
+  let calls = 0;
+  await assert.rejects(
+    () =>
+      retry(
+        async () => {
+          calls++;
+          throw Object.assign(new Error('Wait longer'), { retryAfterMs: 61000 });
+        },
+        {
+          wait: async () => {
+            assert.fail('Must not wait or retry early');
+          },
+        },
+      ),
+    /Wait longer/,
+  );
+  assert.equal(calls, 1);
+});
+
+test('cancelling a cooldown stops retries immediately', async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  await assert.rejects(
+    () =>
+      retry(
+        async () => {
+          calls++;
+          throw Object.assign(new Error('Temporary failure'), { retryAfterMs: 30000 });
+        },
+        { signal: controller.signal, onRetry: () => controller.abort() },
+      ),
+    { name: 'AbortError' },
   );
   assert.equal(calls, 1);
 });
@@ -707,10 +1065,7 @@ test(
     fs.writeFileSync(file, pdf);
     const before = fs.readFileSync(util.MASTER);
     for (const dryRun of [true, false]) {
-      assert.throws(
-        () => reparse({ dryRun }),
-        (error) => error.code === 'PARSE_FAILED',
-      );
+      assert.equal(reparse({ dryRun }).reviewRequired, 1);
       assert.deepEqual(fs.readFileSync(util.MASTER), before);
       assert.deepEqual(fs.readFileSync(file), pdf);
       assert.ok(archiveHelp().issues.some((issue) => issue.includes('AMBIGUOUS_PAYMENT_TOTAL')));

@@ -103,6 +103,9 @@ try {
       message: controller.signal.aborted
         ? 'Sync cancelled. Your PDF archive has been kept.'
         : error.message,
+      ...(typeof error.retryable === 'boolean' && !controller.signal.aborted
+        ? { retryable: error.retryable }
+        : {}),
     },
   });
 } finally {

@@ -181,12 +181,9 @@ test(
       path.join(raw, 'statement_2_revision.pdf'),
       syntheticPdf(statement({ paid: '100.00', date: '03/01/2000' })),
     );
-    const unreviewed = invoke('parse', archive).value;
-    assert.equal(unreviewed.ok, false);
-    assert.equal(unreviewed.error.code, 'PARSE_FAILED');
-    assert.deepEqual(fs.readFileSync(master), before);
-    approveAssessment(raw, 'statement_2_revision.pdf');
     const next = invoke('parse', archive, ['--dry-run']).value;
+    assert.equal(next.ok, true);
+    assert.equal(next.result.reviewRequired, 0);
     assert.equal(next.result.updated, 1);
     assert.deepEqual(
       next.result.changes.updated[0].diffs.find((d) => d.field === 'paid'),

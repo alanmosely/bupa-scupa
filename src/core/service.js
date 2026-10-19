@@ -102,6 +102,9 @@ export function archiveHelp() {
           supporting,
           assessment,
           readable: document.readable === true,
+          automatic: document.automatic === true,
+          needsConfirmation: document.needsConfirmation === true,
+          needsAttention: document.needsAttention === true,
         });
       } catch {
         // Stale or invalid diagnostics cannot authorise a document review.
@@ -111,6 +114,21 @@ export function archiveHelp() {
     /* No prior parsing diagnostics. */
   }
   return { dataDir: DATA, issues, documents, lock: inspectLock() };
+}
+
+export function pendingClaims() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(DATA, 'parsed.json'), 'utf8'));
+    const members = loadConfig().members;
+    return Array.isArray(parsed.pending)
+      ? parsed.pending.filter(
+          (item) =>
+            item && Object.hasOwn(members, item.member) && /^CL\d{12}$/.test(item.claim_ref),
+        )
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 export function reviewedDocumentPath({ file, sha256 }) {
@@ -232,6 +250,7 @@ export function snapshot() {
   }
   return {
     workspace: loadWorkspace(),
+    pendingClaims: pendingClaims(),
     schemaVersion: 1,
     dataDir: DATA,
     configured: !!Object.keys(cfg.members).length,
@@ -272,7 +291,7 @@ export function reparse({ dryRun = false, checkCancelled = () => {} } = {}) {
   if (!Object.keys(loadConfig().members).length)
     throw new ScupaError('SETUP_REQUIRED', 'Set up your household first.');
   const result = parseRawDir({ checkCancelled });
-  if (result.stats.errors?.length)
+  if (result.fatalErrors.length)
     throw new ScupaError(
       'PARSE_FAILED',
       'Some statements could not be safely parsed. Your master records are unchanged. Open Archive help to review the affected files.',
@@ -294,6 +313,7 @@ export function reparse({ dryRun = false, checkCancelled = () => {} } = {}) {
     updated: merged.updated.length,
     changes,
     warnings: merged.warnings,
+    reviewRequired: result.pending.length,
     parsed: result.stats,
     dryRun,
   };
@@ -325,7 +345,13 @@ export function exportCsv(file, query = {}) {
     );
   }
   if (fs.existsSync(file)) throw new ScupaError('FILE_EXISTS', 'Choose a new export filename.');
-  const rows = queryClaims(loadMaster(), query, loadWorkspace().followUps, loadConfig().members);
+  const rows = queryClaims(
+    loadMaster(),
+    query,
+    loadWorkspace().followUps,
+    loadConfig().members,
+    pendingClaims().map((item) => item.claim_ref),
+  );
   fs.writeFileSync(file, spreadsheetCsv(rows), { flag: 'wx', mode: 0o600 });
   return { file, rows: rows.length };
 }
