@@ -26,9 +26,21 @@ existing archive; back up the entire archive folder before updating.
 - The JSON API adds optional reviewRequired to successful parse/sync results.
   Corrupt archive metadata and conflicting ownership still block master updates.
 
+## Downloads
+
+These links become available when the prerelease is published:
+
+- [Portable EXE](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0-rc.1/bupa-scupa-x64.exe)
+- [Application ZIP](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0-rc.1/bupa-scupa-0.3.0-rc.1-x64.zip)
+- [Corresponding source](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0-rc.1/bupa-scupa-0.3.0-rc.1-source.zip)
+- [SHA-256 checksums](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0-rc.1/SHA256SUMS.txt)
+
+Use this version-specific EXE link for the candidate. The permanent latest-EXE
+link serves the latest stable release.
+
 ## Validation and remaining acceptance
 
-The candidate is tested on Windows x64, OS build 26300. Automated coverage includes
+The candidate is tested on Windows 11 x64, OS build 26300. Automated coverage includes
 104 tests, desktop and synthetic portal workflows, packaged and portable agent
 commands, cancellation, source privacy checks and release artifact inspection.
 No dependency versions changed. The dependency audit reports no vulnerabilities.
