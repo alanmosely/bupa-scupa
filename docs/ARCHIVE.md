@@ -27,6 +27,23 @@ It identifies the complete set returned by the portal, including a restored olde
 revision. Parsing uses those files; previous PDFs remain as history. A failed or
 cancelled claim download leaves its previous selection intact.
 
+After a failed or cancelled sync, click **Sync with Bupa** again to resume.
+Sign in and confirm members as usual. SCUPA rechecks the portal's attachment lists
+and reuses validated PDFs saved during the interrupted sync, including documents
+completed before another PDF in the same claim failed. Each claim's private
+`download-progress.json` stores attachment identifiers as hashes, PDF hashes,
+sizes and completion times; no authenticated URLs or login data are saved.
+The progress message says when a saved PDF is reused.
+
+Resume is limited to 24 hours and downloads saved after the last successful sync.
+Matching files must still pass PDF, size and SHA-256 checks. New or changed
+attachment identifiers, missing files and damaged files download again. Recent
+completed claims from older versions can also resume when their entire
+`current.json` filename set matches the fresh attachment list. Loose PDFs from an
+incomplete older download are downloaded again. **Refresh all claims** always
+downloads every selected PDF. A download checkpoint never approves an assessment;
+the usual document reviews and parsing checks still apply.
+
 Archives created before this metadata existed use payment dates and file times
 until refreshed. Use **Archive options → Refresh all claims** to record the
 current files for every claim still available in Bupa's 36-month window. This
@@ -93,19 +110,37 @@ the same people and claim ownership. Corrections require confirmation at the
 next sync. Use a separate archive for a different household; do not rename one
 person as another.
 
+## Download errors
+
+If a document response fails PDF validation, SCUPA retries it through the logged-in
+Bupa browser. Both methods must return a complete PDF before it can enter the
+archive. If neither succeeds, the existing PDFs and current-file selections stay
+intact and the merge stops.
+
+`reports/download-errors.jsonl` records rejected response metadata: HTTP status,
+content type, byte count, detected format, PDF markers and private claim context.
+It does not contain downloaded bodies, authentication data or request URLs. Keep
+this report private with the rest of the archive.
+
 ## Parsing errors
 
 Open **Archive help** to see affected files. Keep these diagnostics private.
-Parsing errors block the merge, leaving the master unchanged. If Bupa changes
-its statement format, retain the PDFs and try a newer SCUPA release.
+Recognised Bupa statements import automatically, including reassessments. SCUPA
+checks the Bupa layout and issuer details, benefit rows, payment totals and
+currencies. Routine statements do not need a confirmation click.
 
-Before a new assessment can supply payment amounts, open **Archive help → View
-PDF**, read every page, and choose **Confirm Bupa assessment** only if Bupa issued
-it and the claims and totals are correct. Portal labels and statement-shaped text
-do not prove who issued a document. Then **Recheck saved PDFs**. Confirmed,
-unchanged PDFs are reused automatically; a new filename or changed contents needs
-a new confirmation. Previously saved PDFs need this confirmation once too. Pending
-reviews leave existing master records unchanged.
+Only affected claims are held back when a document is unfamiliar, unreadable or
+has ambiguous amounts. Other claims appear normally. New affected claims appear
+with blank amounts and **Statement needs attention**; previous payment values stay
+intact for existing claims. Both appear in **Needs attention**, and Archive help
+lists the affected documents. Never interpret a blank amount as zero. Corrupt
+archive metadata and conflicting claim ownership still block the entire merge.
+
+For an unfamiliar but readable assessment, **Archive help → View PDF** lets you
+check every page and **Confirm Bupa assessment** if Bupa issued it and the claims
+and totals are correct. Then **Recheck saved PDFs**. This exceptional confirmation
+is tied to the exact PDF bytes and filename. A provider invoice or receipt cannot
+establish Bupa's payment, and manual confirmation cannot override malformed totals.
 
 Some provider receipts arrive with Bupa's statement tag but contain only images.
 For these, **Archive help → View PDF** opens the original in your PDF viewer.
@@ -118,9 +153,10 @@ Both assessment confirmations and supporting decisions are saved beside the PDF
 in `document-reviews.json`, tied to that
 claim, filename and SHA-256 content hash. The PDF is never renamed or changed.
 A different revision requires a fresh review. **Undo supporting classification**
-removes the decision; the next parse will stop on the unreadable PDF again.
-**Undo assessment confirmation** similarly blocks further imports from that PDF,
-without removing historical master records. Agents cannot confirm assessments.
+removes the decision; the next parse will flag the affected claim again.
+**Undo assessment confirmation** similarly defers an unfamiliar assessment,
+without removing historical master records. Recognised Bupa statements continue
+to import automatically. Agents cannot make manual document-review decisions.
 These decisions are included when you back up the entire archive. Text extraction
 failures and malformed text statements cannot be bypassed with this action.
 

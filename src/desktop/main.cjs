@@ -82,7 +82,14 @@ function run(command, options = {}) {
       }
       if (message.type === 'result') finish(null, message.result);
       if (message.type === 'error')
-        finish(Object.assign(new Error(message.error.message), { code: message.error.code }));
+        finish(
+          Object.assign(new Error(message.error.message), {
+            code: message.error.code,
+            ...(typeof message.error.retryable === 'boolean'
+              ? { retryable: message.error.retryable }
+              : {}),
+          }),
+        );
     });
     worker.on('error', (error) => finish(error));
     worker.on('exit', () => {

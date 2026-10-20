@@ -29,7 +29,7 @@ export function statement({
   provider = 'Example Clinic',
   date = '02/01/2000',
 } = {}) {
-  return `Payment date: ${date}\nFor Claim ${ref}\nFor treatment at ${provider} (provider invoice DEMO-1)\n01/01/2000    Specialist consultation    £${claimed}    £${paid}\nTotal payment made to you    £${paid}\n${extra}`;
+  return `Bupa Global\ninfo@bupaglobal.com\nPayment date: ${date}\nFor Claim ${ref}\nFor treatment at ${provider} (provider invoice DEMO-1)\n01/01/2000    Specialist consultation    £${claimed}    £${paid}\nTotal payment made to you    £${paid}\n${extra}`;
 }
 export function convertedStatement({
   ref = REF,
@@ -37,7 +37,9 @@ export function convertedStatement({
   to = 'GBP',
   nonPayable = true,
 } = {}) {
-  return `Payment date: 02/01/2000
+  return `Bupa Global
+info@bupaglobal.com
+Payment date: 02/01/2000
 We have converted your claim into the currency that your health plan is paid in.
 For Claim ${ref}
 For treatment at Example Clinic (provider invoice DEMO-1)

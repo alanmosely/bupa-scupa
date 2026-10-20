@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { test, beforeEach } from 'node:test';
-import { REF, OTHER, statement, syntheticPdf, approveAssessment } from './fixtures.js';
+import { REF, OTHER, statement, syntheticPdf } from './fixtures.js';
 
 fs.mkdirSync('.cache/tests', { recursive: true });
 process.env.SCUPA_DATA_DIR = fs.mkdtempSync(path.resolve('.cache/tests/documents-'));
@@ -20,47 +20,23 @@ const scan = path.join(RAW, file);
 const reviews = path.join(directory, 'document-reviews.json');
 const current = path.join(directory, 'current.json');
 const blank = syntheticPdf('');
+const unfamiliar = (text) => text.replaceAll('Bupa Global\ninfo@bupaglobal.com\n', '');
 const saveCurrent = (files) =>
   fs.writeFileSync(current, JSON.stringify({ schemaVersion: 1, files }));
-const decision = (supporting = true) => ({ file, sha256: documentHash(scan), supporting });
-const review = (options) => {
+const review = (classification, document = { file, sha256: documentHash(scan) }) => {
   const release = service.acquireLock();
   try {
-    service.reviewDocument({
-      file: options.file,
-      sha256: options.sha256,
-      classification: options.classification ?? (options.supporting ? 'supporting' : null),
-    });
+    service.reviewDocument({ ...document, classification });
   } finally {
     release();
   }
 };
-test(
-  'unreviewed provider PDFs cannot change payments, with or without invoice headings',
-  { skip: !pdfAvailable },
-  () => {
-    saveCurrent(['statement_1_demo.pdf']);
-    service.reparse();
-    const master = fs.readFileSync(MASTER);
-    for (const heading of ['INVOICE\n', 'RECEIPT\n', '']) {
-      fs.writeFileSync(
-        scan,
-        syntheticPdf(
-          heading +
-            statement({ paid: '100.00' }) +
-            '\n' +
-            statement({ ref: OTHER, paid: '100.00' }),
-        ),
-      );
-      saveCurrent(['statement_2_scan.pdf']);
-      assert.throws(
-        () => service.reparse(),
-        (error) => error.code === 'PARSE_FAILED',
-      );
-      assert.deepEqual(fs.readFileSync(MASTER), master);
-    }
-  },
-);
+const pending = () => {
+  const result = service.reparse();
+  assert.ok(result.reviewRequired > 0);
+  assert.ok(service.archiveHelp().issues.length > 0);
+  return result;
+};
 beforeEach(() => {
   saveConfig({
     schemaVersion: 1,
@@ -68,103 +44,144 @@ beforeEach(() => {
     members: { demo: { displayName: 'Example Person', self: true } },
     watchlist: [],
   });
+  for (const name of [MASTER, path.join(DATA, 'parsed.json')])
+    if (fs.existsSync(name)) fs.unlinkSync(name);
   fs.writeFileSync(path.join(directory, 'statement_1_demo.pdf'), syntheticPdf(statement()));
   fs.writeFileSync(scan, blank);
   fs.writeFileSync(reviews, JSON.stringify({ schemaVersion: 1, supporting: {} }));
-  approveAssessment(directory, 'statement_1_demo.pdf');
-  saveCurrent(['statement_1_demo.pdf', 'statement_2_scan.pdf']);
+  saveCurrent(['statement_1_demo.pdf']);
+  const otherCurrent = path.join(RAW, 'demo', OTHER, 'current.json');
+  if (fs.existsSync(otherCurrent))
+    fs.writeFileSync(otherCurrent, JSON.stringify({ schemaVersion: 1, files: [] }));
 });
 
 test(
-  'reviewed scans preserve PDFs and amounts, work offline, and can be undone',
+  'standard Bupa statements and reassessments import without manual approval',
   { skip: !pdfAvailable },
   () => {
-    assert.throws(
-      () => service.reparse(),
-      (error) => error.code === 'PARSE_FAILED',
+    assert.equal(service.reparse().reviewRequired, 0);
+    assert.equal(service.snapshot().rows.find((row) => row.claim_ref === REF).paid, '80.0');
+    assert.equal(service.archiveHelp().documents[0].automatic, true);
+    fs.writeFileSync(
+      path.join(directory, 'statement_1_demo.pdf'),
+      syntheticPdf(statement({ paid: '100.00', date: '03/01/2000' })),
     );
-    const document = service.archiveHelp().documents.find((doc) => doc.file === file);
-    assert.deepEqual(document, {
-      file,
-      sha256: documentHash(scan),
-      supporting: false,
-      assessment: false,
-      readable: false,
+    assert.equal(service.reparse().updated, 1);
+    assert.equal(service.snapshot().rows.find((row) => row.claim_ref === REF).paid, '100.0');
+    assert.deepEqual(JSON.parse(fs.readFileSync(reviews, 'utf8')), {
+      schemaVersion: 1,
+      supporting: {},
     });
-    assert.equal(service.reviewedDocumentPath(document), scan);
-    review(decision());
-    assert.equal(service.archiveHelp().documents.find((doc) => doc.file === file).supporting, true);
-    assert.deepEqual(fs.readFileSync(scan), blank);
-    assert.deepEqual(service.reparse().parsed.errors, []);
-    assert.equal(service.snapshot().rows[0].paid, '80.0');
-    assert.equal(service.reparse().updated, 0);
-    const master = fs.readFileSync(MASTER);
-    review(decision(false));
-    assert.throws(
-      () => service.reparse(),
-      (error) => error.code === 'PARSE_FAILED',
-    );
-    assert.deepEqual(fs.readFileSync(MASTER), master);
-    review(decision());
-    // A supporting scan on its own does not create a zero-value assessment.
-    saveCurrent(['statement_2_scan.pdf']);
-    assert.equal(service.reparse({ dryRun: true }).parsed.stubs, 1);
-    assert.deepEqual(fs.readFileSync(MASTER), master);
   },
 );
 
 test(
-  'assessment approval binds valid single- and multi-claim PDFs to their exact bytes',
+  'provider statement-shaped PDFs need review, including invoice headings and cached text',
   { skip: !pdfAvailable },
   () => {
-    const text = statement() + '\n' + statement({ ref: OTHER, paid: '100.00' });
-    fs.writeFileSync(scan, syntheticPdf(text));
-    saveCurrent(['statement_2_scan.pdf']);
-    assert.throws(
-      () => service.reparse(),
-      (error) => error.code === 'PARSE_FAILED',
+    service.reparse();
+    for (const heading of ['INVOICE\n', 'RECEIPT\n', '']) {
+      fs.writeFileSync(scan, syntheticPdf(heading + unfamiliar(statement({ paid: '100.00' }))));
+      saveCurrent(['statement_2_scan.pdf']);
+      pending();
+      assert.equal(service.snapshot().rows.find((row) => row.claim_ref === REF).paid, '80.0');
+    }
+    fs.writeFileSync(scan, syntheticPdf('INVOICE\n' + statement({ paid: '100.00' })));
+    pending();
+    assert.equal(service.snapshot().rows.find((row) => row.claim_ref === REF).paid, '80.0');
+  },
+);
+
+test(
+  'unreadable documents do not block unrelated claims or change existing payments',
+  { skip: !pdfAvailable },
+  () => {
+    service.reparse();
+    saveCurrent(['statement_1_demo.pdf', 'statement_2_scan.pdf']);
+    const otherDir = path.join(RAW, 'demo', OTHER);
+    fs.mkdirSync(otherDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(otherDir, 'statement_1_other.pdf'),
+      syntheticPdf(statement({ ref: OTHER })),
     );
-    const document = { file, sha256: documentHash(scan), classification: 'assessment' };
-    review(document);
-    assert.equal(service.archiveHelp().documents[0].assessment, true);
-    assert.deepEqual(service.reparse().parsed.errors, []);
+    fs.writeFileSync(
+      path.join(otherDir, 'current.json'),
+      JSON.stringify({ schemaVersion: 1, files: ['statement_1_other.pdf'] }),
+    );
+    const result = pending();
+    assert.equal(result.reviewRequired, 1);
     assert.equal(service.snapshot().rows.length, 2);
-    assert.equal(service.reparse().updated, 0);
-    const master = fs.readFileSync(MASTER);
-    fs.writeFileSync(scan, syntheticPdf(text.replace('£80.00', '£90.00')));
-    assert.throws(() => review(document), /changed/);
-    assert.throws(
-      () => service.reparse(),
-      (error) => error.code === 'PARSE_FAILED',
-    );
-    assert.deepEqual(fs.readFileSync(MASTER), master);
-    fs.writeFileSync(scan, syntheticPdf(text));
-    assert.equal(service.reparse().updated, 0, 'Restored approved bytes stay approved');
-    review({ ...document, supporting: false, classification: undefined });
-    assert.throws(
-      () => service.reparse(),
-      (error) => error.code === 'PARSE_FAILED',
-    );
-    assert.deepEqual(fs.readFileSync(MASTER), master);
+    assert.equal(service.snapshot().rows.find((row) => row.claim_ref === OTHER).paid, '80.0');
+    assert.equal(service.snapshot().rows.find((row) => row.claim_ref === REF).paid, '80.0');
+    assert.deepEqual(service.pendingClaims(), [{ member: 'demo', claim_ref: REF }]);
+    assert.deepEqual(fs.readFileSync(scan), blank);
+    review('supporting');
+    assert.equal(service.reparse().reviewRequired, 0);
+    review(null);
+    pending();
   },
 );
 
 test(
-  'cached text and supporting decisions cannot authorise another assessment PDF',
+  'new claims with ambiguous totals appear with unknown amounts instead of false zeroes',
   { skip: !pdfAvailable },
   () => {
-    fs.writeFileSync(scan, syntheticPdf(statement()));
-    const masterBefore = fs.existsSync(MASTER) ? fs.readFileSync(MASTER) : null;
-    assert.throws(
-      () => service.reparse(),
-      (error) => error.code === 'PARSE_FAILED',
+    fs.writeFileSync(
+      path.join(directory, 'statement_1_demo.pdf'),
+      syntheticPdf(statement() + '\nTotal payment made to your healthcare provider    £20.00'),
     );
-    assert.equal(
-      masterBefore ? fs.readFileSync(MASTER).equals(masterBefore) : !fs.existsSync(MASTER),
-      true,
+    pending();
+    const row = service.snapshot().rows.find((row) => row.claim_ref === REF);
+    assert.equal(row.paid, '');
+    assert.equal(row.claimed, '');
+    assert.match(row.notes, /Statement needs attention/);
+    assert.ok(
+      service.archiveHelp().issues.some((issue) => issue.includes('AMBIGUOUS_PAYMENT_TOTAL')),
     );
-    const parsed = JSON.parse(fs.readFileSync(path.join(DATA, 'parsed.json'), 'utf8'));
-    assert.ok(parsed.stats.errors.some((message) => message.includes('UNREVIEWED_ASSESSMENT')));
+  },
+);
+
+test(
+  'unfamiliar assessments can be confirmed once, bound to exact bytes and filenames',
+  { skip: !pdfAvailable },
+  () => {
+    fs.writeFileSync(scan, syntheticPdf(unfamiliar(statement())));
+    saveCurrent(['statement_2_scan.pdf']);
+    pending();
+    const document = { file, sha256: documentHash(scan) };
+    review('assessment', document);
+    assert.equal(service.reparse().reviewRequired, 0);
+    fs.writeFileSync(scan, syntheticPdf(unfamiliar(statement({ paid: '100.00' }))));
+    assert.throws(() => review('assessment', document), /changed/);
+    pending();
+    assert.equal(service.snapshot().rows.find((row) => row.claim_ref === REF).paid, '80.0');
+    fs.writeFileSync(scan, syntheticPdf(unfamiliar(statement())));
+    assert.equal(service.reparse().reviewRequired, 0);
+    const renamed = 'statement_2_scan__revision_demo.pdf';
+    fs.copyFileSync(scan, path.join(directory, renamed));
+    saveCurrent([renamed]);
+    pending();
+    assert.throws(() => review('assessment', document), /no longer current/);
+  },
+);
+
+test('a malformed segment defers the whole multi-claim document', { skip: !pdfAvailable }, () => {
+  fs.writeFileSync(
+    scan,
+    syntheticPdf(statement() + '\n' + statement({ ref: OTHER }).replace(/Total payment[^\n]+/, '')),
+  );
+  saveCurrent(['statement_2_scan.pdf']);
+  const result = pending();
+  assert.equal(result.reviewRequired, 2);
+  assert.ok(service.snapshot().rows.every((row) => row.paid === ''));
+});
+
+test(
+  'supporting decisions cannot authorise readable assessments or unsafe totals',
+  { skip: !pdfAvailable },
+  () => {
+    fs.writeFileSync(scan, syntheticPdf(unfamiliar(statement())));
+    saveCurrent(['statement_2_scan.pdf']);
     fs.writeFileSync(
       reviews,
       JSON.stringify({
@@ -174,133 +191,37 @@ test(
         },
       }),
     );
-    saveCurrent(['statement_2_scan.pdf']);
-    assert.throws(
-      () => service.reparse(),
-      (error) => error.code === 'PARSE_FAILED',
-    );
+    pending();
     for (const content of ['', 'Claim statement', statement().replace(/Total payment[^\n]+/, '')]) {
       fs.writeFileSync(scan, syntheticPdf(content));
-      assert.throws(
-        () => review({ file, sha256: documentHash(scan), classification: 'assessment' }),
-        /Only readable, valid/,
-      );
+      assert.throws(() => review('assessment'), /Only readable, valid/);
     }
-  },
-);
-
-test(
-  'review decisions never carry over to changed bytes or another filename',
-  { skip: !pdfAvailable },
-  () => {
-    const original = decision();
-    review(original);
-    const changed = Buffer.concat([blank, Buffer.from('\n% changed scan\n')]);
-    fs.writeFileSync(scan, changed);
-    assert.throws(() => service.reviewedDocumentPath(original), /changed/);
-    assert.throws(() => review(original), /changed/);
-    assert.throws(
-      () => service.reparse(),
-      (error) => error.code === 'PARSE_FAILED',
-    );
-    assert.equal(
-      service.archiveHelp().documents.find((doc) => doc.file === file).supporting,
-      false,
-    );
-    fs.writeFileSync(path.join(directory, 'statement_2_scan__revision_demo.pdf'), blank);
-    saveCurrent(['statement_1_demo.pdf', 'statement_2_scan__revision_demo.pdf']);
-    assert.throws(
-      () => service.reparse(),
-      (error) => error.code === 'PARSE_FAILED',
-    );
-    assert.throws(() => review(decision()), /no longer current/);
-  },
-);
-
-test(
-  'assessment decisions never transfer to new filenames or conflicting metadata',
-  { skip: !pdfAvailable },
-  () => {
     fs.writeFileSync(scan, syntheticPdf(statement()));
-    review({ file, sha256: documentHash(scan), classification: 'assessment' });
-    saveCurrent(['statement_2_scan.pdf']);
+    assert.throws(() => review('supporting'), /Only image-only/);
+  },
+);
+
+test(
+  'invalid archive metadata and arbitrary paths still block unsafe writes',
+  { skip: !pdfAvailable },
+  () => {
     service.reparse();
     const master = fs.readFileSync(MASTER);
-    const renamed = 'statement_2_scan__revision_demo.pdf';
-    fs.copyFileSync(scan, path.join(directory, renamed));
-    saveCurrent([renamed]);
-    assert.throws(
-      () => service.reparse(),
-      (error) => error.code === 'PARSE_FAILED',
-    );
+    saveCurrent(['statement_1_demo.pdf', 'missing.pdf']);
+    assert.throws(() => service.reparse(), { code: 'PARSE_FAILED' });
     assert.deepEqual(fs.readFileSync(MASTER), master);
-    saveCurrent(['statement_2_scan.pdf']);
-    const entry = { sha256: documentHash(scan), reviewedAt: '2000-01-02' };
-    for (const invalid of [null, [], { 'statement_2_scan.pdf': { ...entry, sha256: 'invalid' } }]) {
-      fs.writeFileSync(
-        reviews,
-        JSON.stringify({ schemaVersion: 1, supporting: {}, assessments: invalid }),
-      );
-      assert.throws(
-        () => service.reparse(),
-        (error) => error.code === 'PARSE_FAILED',
-      );
-      assert.deepEqual(fs.readFileSync(MASTER), master);
-    }
-    fs.writeFileSync(
-      reviews,
-      JSON.stringify({
-        schemaVersion: 1,
-        supporting: { 'statement_2_scan.pdf': entry },
-        assessments: { 'statement_2_scan.pdf': entry },
-      }),
-    );
-    assert.throws(
-      () => service.reparse(),
-      (error) => error.code === 'PARSE_FAILED',
-    );
-    assert.deepEqual(fs.readFileSync(MASTER), master);
-  },
-);
-
-test(
-  'readable statements, extraction failures, invalid reviews and arbitrary paths stay blocked',
-  { skip: !pdfAvailable },
-  () => {
-    for (const content of [
-      statement(),
-      `For Claim ${REF}\nUnreadable benefit table`,
-      'Claim statement',
-    ]) {
-      fs.writeFileSync(scan, syntheticPdf(content));
-      assert.throws(() => review(decision()), /Only image-only/);
-    }
-    fs.writeFileSync(scan, blank);
-    review(decision());
-    fs.writeFileSync(scan, Buffer.from('%PDF-broken\n%%EOF'));
-    assert.throws(() => review(decision()), /pdftotext failed/);
-    assert.throws(
-      () => service.reparse(),
-      (error) => error.code === 'PARSE_FAILED',
-    );
-    fs.writeFileSync(scan, blank);
+    saveCurrent(['statement_1_demo.pdf']);
     fs.writeFileSync(reviews, '{broken');
-    assert.throws(
-      () => service.reparse(),
-      (error) => error.code === 'PARSE_FAILED',
-    );
+    assert.throws(() => service.reparse(), { code: 'PARSE_FAILED' });
+    assert.deepEqual(fs.readFileSync(MASTER), master);
     for (const bad of [
       '../household.json',
       `demo/${REF}/../../household.json`,
       `other/${REF}/statement_2_scan.pdf`,
       file + ':stream',
       file.replaceAll('/', '\\'),
-    ]) {
-      assert.throws(
-        () => resolveDocument(bad),
-        (error) => error.code === 'INVALID_INPUT',
-      );
-    }
+    ])
+      assert.throws(() => resolveDocument(bad), { code: 'INVALID_INPUT' });
     assert.equal(fs.existsSync(path.join(DATA, '.scupa-lock')), false);
   },
 );

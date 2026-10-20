@@ -64,11 +64,17 @@ function shortDate(value) {
     year: date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
   });
 }
-function statusLabel(status) {
+function statusLabel(status, importPending = false) {
+  if (importPending && /^No statement/.test(status)) return 'Statement needs attention';
   return /^No statement/.test(status) ? 'Awaiting statement' : status;
 }
 function compactAttention(row, followUp) {
-  return attentionReasons(row, followUp)
+  return attentionReasons(
+    row,
+    followUp,
+    undefined,
+    data.pendingClaims.some((item) => item.claim_ref === row.claim_ref),
+  )
     .map((reason) => {
       if (/^Follow-up/.test(reason))
         return `${followUp.followUpOn <= localToday() ? 'Due' : 'Follow up'} ${shortDate(followUp.followUpOn)}`;
@@ -153,8 +159,15 @@ function render() {
   $('saved-view').value = previousView;
   $('remove-view').hidden = !$('saved-view').value;
   $('attention-count').textContent = String(
-    data.rows.filter((row) => attentionReasons(row, data.workspace.followUps[row.claim_ref]).length)
-      .length,
+    data.rows.filter(
+      (row) =>
+        attentionReasons(
+          row,
+          data.workspace.followUps[row.claim_ref],
+          undefined,
+          data.pendingClaims.some((item) => item.claim_ref === row.claim_ref),
+        ).length,
+    ).length,
   );
   renderRows();
 }
@@ -203,7 +216,13 @@ function renderRows() {
   }
   let rows = [];
   try {
-    rows = queryClaims(data.rows, currentQuery(), data.workspace.followUps, data.members);
+    rows = queryClaims(
+      data.rows,
+      currentQuery(),
+      data.workspace.followUps,
+      data.members,
+      data.pendingClaims.map((item) => item.claim_ref),
+    );
     $('filter-error').hidden = true;
   } catch (error) {
     $('filter-error').textContent = error.message;
@@ -260,7 +279,10 @@ function renderRows() {
     chip.className = 'status-chip';
     if (/No statement|Partially/.test(r.status)) chip.classList.add('attention');
     if (/Rejected|Duplicate/.test(r.status)) chip.classList.add('rejected');
-    chip.textContent = statusLabel(r.status);
+    chip.textContent = statusLabel(
+      r.status,
+      data.pendingClaims.some((item) => item.claim_ref === r.claim_ref),
+    );
     chip.title = r.status;
     td.append(chip);
     const followUp = data.workspace.followUps[r.claim_ref];
@@ -318,7 +340,10 @@ async function openClaim(claimRef) {
     $('detail-provider').textContent = row.provider || 'Awaiting a statement';
     $('detail-member').textContent = data.members[row.member]?.displayName || row.member;
     $('detail-reference').textContent = row.claim_ref;
-    $('detail-status').textContent = statusLabel(row.status);
+    $('detail-status').textContent = statusLabel(
+      row.status,
+      data.pendingClaims.some((item) => item.claim_ref === row.claim_ref),
+    );
     $('detail-status').title = row.status;
     $('detail-status').className =
       'status-chip' +
@@ -429,6 +454,13 @@ $('follow-up-form').onsubmit = async (event) => {
 async function refresh() {
   data = await call('snapshot');
   render();
+  if (data.pendingClaims.length) {
+    if (!$('message').textContent)
+      message(
+        `${data.pendingClaims.length} ${data.pendingClaims.length === 1 ? 'claim needs' : 'claims need'} attention. Other claims are available below. Open Archive help for details.`,
+      );
+    $('recovery-actions').hidden = false;
+  }
 }
 function clearChanges() {
   $('changes').hidden = true;
@@ -499,7 +531,7 @@ async function operate(command, ...args) {
     if ('changes' in result) changes = result;
     message(
       'added' in result
-        ? `Done. ${result.added} claims added, ${result.updated} updated.`
+        ? `Done. ${result.added} claims added, ${result.updated} updated.${result.reviewRequired ? ` ${result.reviewRequired} ${result.reviewRequired === 1 ? 'claim needs' : 'claims need'} attention. Open Archive help for details.` : ''}`
         : 'Household saved. You’re ready for your first sync.',
     );
   } catch (error) {
@@ -771,7 +803,9 @@ async function showArchiveHelp() {
       item.textContent = issue;
       $('help-issues').append(item);
     }
-    for (const doc of help.documents) {
+    for (const doc of help.documents.filter(
+      (doc) => doc.needsAttention || doc.supporting || (doc.assessment && !doc.automatic),
+    )) {
       const item = document.createElement('li');
       const label = document.createElement('p');
       label.textContent =
@@ -780,9 +814,11 @@ async function showArchiveHelp() {
           ? ' — marked as supporting.'
           : doc.assessment
             ? ' — confirmed Bupa assessment.'
-            : doc.readable
+            : doc.needsConfirmation
               ? ' — assessment needs your confirmation.'
-              : ' — no readable text.');
+              : doc.readable
+                ? ' — statement needs attention.'
+                : ' — no readable text.');
       const actions = document.createElement('div');
       actions.className = 'actions';
       const open = document.createElement('button');
@@ -826,7 +862,9 @@ async function showArchiveHelp() {
           review.disabled = false;
         }
       };
-      actions.append(open, review);
+      actions.append(open);
+      if (!doc.readable || doc.needsConfirmation || (doc.assessment && !doc.automatic))
+        actions.append(review);
       item.append(label, actions);
       $('help-issues').append(item);
     }

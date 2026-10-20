@@ -13,6 +13,29 @@ import { HEADERS, CLAIM_STATUS } from '../src/core/model.js';
 import { toCsv, parseCsv } from '../src/core/csv.js';
 import { REF, OTHER, syntheticPdf, statement } from './fixtures.js';
 
+test('pending statement imports remain in attention even after an assessment was reviewed', () => {
+  const paid = {
+    claim_ref: REF,
+    member: 'demo',
+    status: CLAIM_STATUS.paid,
+    claimed: '100.0',
+    paid: '100.0',
+    currency: 'GBP',
+    paid_currency: 'GBP',
+    payment_date: '2000-01-02',
+    notes: '',
+  };
+  const followUp = { ...emptyFollowUp(), reviewed: true, assessmentKey: assessmentKey(paid) };
+  assert.deepEqual(attentionReasons(paid, followUp, '2000-01-03', true), [
+    'Statement needs attention',
+  ]);
+  assert.equal(
+    queryClaims([paid], { view: 'attention' }, { [REF]: followUp }, {}, [REF]).length,
+    1,
+  );
+  assert.equal(queryClaims([paid], { view: 'attention' }, { [REF]: followUp }).length, 0);
+});
+
 fs.mkdirSync('.cache/tests', { recursive: true });
 process.env.SCUPA_DATA_DIR = fs.mkdtempSync(path.resolve('.cache/tests/claims-'));
 const service = await import('../src/core/service.js');

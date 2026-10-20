@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { _electron as electron } from 'playwright-core';
@@ -14,6 +15,10 @@ import {
 
 fs.mkdirSync('.cache/smoke', { recursive: true });
 const archive = fs.mkdtempSync(path.resolve('.cache/smoke/archive-'));
+const screenshots =
+  process.env.SCUPA_SCREENSHOT_DIR ||
+  fs.mkdtempSync(path.join(os.tmpdir(), 'scupa-import-screens-'));
+fs.mkdirSync(screenshots, { recursive: true });
 const packaged = process.argv.includes('--packaged');
 const executablePath = packaged ? path.resolve('dist/win-unpacked/BUPA SCUPA.exe') : undefined;
 const app = await electron.launch({
@@ -27,6 +32,8 @@ const app = await electron.launch({
 });
 try {
   const page = await app.firstWindow();
+  assert.equal(await page.title(), 'BUPA SCUPA');
+  assert.match(page.url(), /\/src\/ui\/index\.html$/);
   // Native dialogs are answered only for this synthetic archive.
   await app.evaluate(({ dialog, shell }) => {
     globalThis.reviewAnswer = 0;
@@ -45,6 +52,13 @@ try {
   });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (entry) => {
+    if (
+      ['error', 'warning'].includes(entry.type()) &&
+      !/Electron Security Warning/.test(entry.text())
+    )
+      errors.push(entry.text());
+  });
   await page.getByRole('heading', { name: 'Start with your Bupa login' }).waitFor();
   assert.equal(await page.locator('#sync').isEnabled(), true);
   assert.equal(
@@ -72,27 +86,18 @@ try {
     true,
   );
   await page.locator('#reparse').click();
-  await page.getByText('Some statements could not be safely parsed.', { exact: false }).waitFor();
-  assert.equal(fs.existsSync(path.join(archive, 'master', 'claims.csv')), false);
-  await page.locator('#error-help').click();
-  await page.getByRole('button', { name: 'View PDF', exact: true }).click();
-  await page
-    .getByText('PDF opened. Review every page and check who issued it before classifying it.')
-    .waitFor();
-  assert.equal(
-    await app.evaluate(() => globalThis.openedPdf),
-    path.join(directory, 'statement_1_demo.pdf'),
-  );
-  await page.getByRole('button', { name: 'Confirm Bupa assessment', exact: true }).click();
-  await page.getByText('Review decisions are shown below.', { exact: false }).waitFor();
+  await page.getByText('Done. 1 claims added, 0 updated.').waitFor();
   assert.equal(fs.existsSync(path.join(directory, 'document-reviews.json')), false);
+  await page.locator('#archive-help').click();
+  assert.equal(
+    await page.getByRole('button', { name: 'Confirm Bupa assessment', exact: true }).count(),
+    0,
+  );
+  assert.equal(await page.locator('#help-issues > li').count(), 0);
+  await page.locator('#close-help').click();
   await app.evaluate(() => {
     globalThis.reviewAnswer = 1;
   });
-  await page.getByRole('button', { name: 'Confirm Bupa assessment', exact: true }).click();
-  await page.getByRole('button', { name: 'Undo assessment confirmation', exact: true }).waitFor();
-  await page.locator('#close-help').click();
-  await page.locator('#reparse').click();
   await page.getByText('Done. 1 claims added, 0 updated.').waitFor();
   await page.waitForFunction(() => document.getElementById('claim-count').textContent === '1');
   assert.equal(await page.locator('#claim-count').textContent(), '1');
@@ -181,7 +186,7 @@ try {
   assert.match(changes, /Paid: £64\.00 → £72\.00/);
   assert.match(changes, /Claimed: €100\.00 → €110\.00/);
   assert.equal(await page.locator('#changes-list b').count(), 0, 'Member names are never HTML');
-  await page.screenshot({ path: '.cache/smoke/changes.png', fullPage: true });
+  await page.screenshot({ path: path.join(screenshots, 'changes.png'), fullPage: true });
   await page.locator('#reparse').click();
   await page.getByText('Done. 0 claims added, 0 updated.').waitFor();
   assert.equal(await page.locator('#changes').isVisible(), false, 'No-op clears previous changes');
@@ -195,7 +200,14 @@ try {
   const reviewFile = path.join(directory, 'document-reviews.json');
   const masterBeforeReview = fs.readFileSync(path.join(archive, 'master', 'claims.csv'));
   await page.locator('#reparse').click();
-  await page.getByText('Some statements could not be safely parsed.', { exact: false }).waitFor();
+  await page.getByText('1 claim needs attention.', { exact: false }).waitFor();
+  assert.equal(await page.locator('#claims tr').count(), 2, 'Other claims remain visible');
+  await page.locator('#attention-tab').click();
+  assert.match(await page.locator('#claims').textContent(), /Statement needs attention/);
+  await page.locator('.archive-settings summary').click();
+  await page.screenshot({ path: path.join(screenshots, 'partial-import.png'), fullPage: true });
+  await page.locator('.archive-settings summary').click();
+  await page.locator('#all-tab').click();
   assert.equal(
     await page.locator('#changes').isVisible(),
     false,
@@ -223,7 +235,7 @@ try {
   });
   await page.getByRole('button', { name: 'Mark as supporting document', exact: true }).click();
   await page.getByRole('button', { name: 'Undo supporting classification', exact: true }).waitFor();
-  await page.screenshot({ path: '.cache/smoke/document-review.png', fullPage: true });
+  await page.screenshot({ path: path.join(screenshots, 'document-review.png'), fullPage: true });
   assert.deepEqual(fs.readFileSync(scan), scanBytes);
   assert.deepEqual(fs.readFileSync(path.join(archive, 'master', 'claims.csv')), masterBeforeReview);
   await page.getByRole('button', { name: 'Undo supporting classification', exact: true }).click();
@@ -240,20 +252,20 @@ try {
   const assessmentBytes = fs.readFileSync(assessment);
   fs.writeFileSync(assessment, syntheticPdf(statement().replace(/Total payment[^\n]+/, '')));
   await page.locator('#reparse').click();
-  await page.getByText('Some statements could not be safely parsed.', { exact: false }).waitFor();
+  await page.getByText('1 claim needs attention.', { exact: false }).waitFor();
   await page.locator('#error-help').click();
   await page.getByText(/\[MISSING_PAYMENT_TOTAL\]/).waitFor();
   assert.match(await page.locator('#help-issues').textContent(), /MISSING_PAYMENT_TOTAL/);
-  await page.getByRole('button', { name: 'Confirm Bupa assessment', exact: true }).click();
-  await page
-    .getByText('Only readable, valid assessments can be approved.', { exact: false })
-    .waitFor();
+  assert.equal(
+    await page.getByRole('button', { name: 'Confirm Bupa assessment', exact: true }).count(),
+    0,
+  );
   assert.deepEqual(fs.readFileSync(path.join(archive, 'master', 'claims.csv')), masterBeforeReview);
   await page.locator('#close-help').click();
   fs.writeFileSync(assessment, assessmentBytes);
   await page.locator('#reparse').click();
   await page.getByText('Done. 0 claims added, 0 updated.').waitFor();
-  await page.screenshot({ path: '.cache/smoke/dashboard.png', fullPage: true });
+  await page.screenshot({ path: path.join(screenshots, 'dashboard.png'), fullPage: true });
   if (process.argv.includes('--cancel-parse')) {
     const master = path.join(archive, 'master', 'claims.csv');
     const before = fs.readFileSync(master);
@@ -303,6 +315,7 @@ try {
     'Desktop smoke passed: setup, offline bundled PDF parsing, added and reassessed claim summaries, document review and undo, separate claim/payment currencies, totals, search, filters, renderer isolation. ' +
       (packaged ? 'Packaged executable.' : 'Development executable.'),
   );
+  console.log('Import UX screenshots: ' + screenshots);
 } catch (error) {
   const page = await app.firstWindow();
   console.error(
