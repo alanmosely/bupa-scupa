@@ -48,6 +48,7 @@ const parse = object({
   parsed,
   dryRun: { type: 'boolean' },
 });
+parse.properties.reviewRequired = count;
 const results = {
   schema: object({
     schemaVersion: { const: 1 },
@@ -70,7 +71,10 @@ const results = {
   claims: object({ members, rows: array(row) }),
   report: object({ totals, awaiting: count, lastSync: timestamp, claimCount: count }),
   parse,
-  sync: object({ ...parse.properties, fetched: array(object({ member: string, claims: count })) }),
+  sync: object({ ...parse.properties, fetched: array(object({ member: string, claims: count })) }, [
+    ...parse.required,
+    'fetched',
+  ]),
 };
 const schema = (value) => ({ $schema: 'http://json-schema.org/draft-07/schema#', ...value });
 const error = object({ code: string, message: string, retryable: { type: 'boolean' } });

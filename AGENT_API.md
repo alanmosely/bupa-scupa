@@ -29,11 +29,14 @@ listed by `schema`. Do not parse progress messages as results.
 
 ## Commands
 
-New assessment PDFs need a human to view and confirm them in the normal desktop
-app's **Archive help** before `parse` or `sync` can import their payment amounts.
-An unconfirmed or changed PDF produces `PARSE_FAILED` and leaves the master
-unchanged. The agent interface cannot approve PDFs; unchanged confirmations are
-reused by later runs. See [archive recovery](docs/ARCHIVE.md#parsing-errors).
+Recognised Bupa statements import automatically when their amounts and currencies
+pass validation. Unfamiliar, unreadable or ambiguous documents defer only the
+affected claims; other claims still import. `reviewRequired` counts deferred
+claims, and `parsed.errors` contains their private diagnostics. New deferred claims
+have blank amounts and a statement-attention note; existing payment records remain
+unchanged. Archive corruption and conflicting ownership still produce
+`PARSE_FAILED` without changing the master. The agent interface cannot make manual
+document-review decisions. See [archive recovery](docs/ARCHIVE.md#parsing-errors).
 
 | Command                 | Access                 | Result                                                                                   |
 | ----------------------- | ---------------------- | ---------------------------------------------------------------------------------------- |
@@ -85,12 +88,32 @@ Codes include `INVALID_INPUT`, `SETUP_REQUIRED`, `HUMAN_ACTION_REQUIRED`, `BUSY`
 codes or cookie values are included. Claim amounts in canonical rows are decimal
 strings; report amounts are JSON numbers in each named currency.
 
+Portal HTTP failures report `BUPA_RATE_LIMITED` (429) or `BUPA_REQUEST_FAILED`
+with their HTTP status. Temporary failures are retried with backoff and respect
+`Retry-After`; long cooldowns stop with the saved PDFs preserved. A real expired
+login pauses sync for manual sign-in in the same browser, then restores and verifies
+the member before resuming the request. If recovery fails, `SESSION_EXPIRED`
+requires another manual sync. Credentials and MFA are never automated.
+
+An invalid PDF body is retried through the logged-in portal browser, with the
+same PDF validation and 64 MB limit. If both methods fail, `INVALID_PDF_DOWNLOAD`
+reports the HTTP status, content type, detected format and byte count. Private
+diagnostics in `reports/download-errors.jsonl` contain only response metadata and
+claim context; response bodies, authentication data and URLs are never logged.
+
 `currency` applies to `claimed`; `paid_currency` applies to `paid`. Conversion
 statements preserve both currencies. Status compares the original-currency
 payment given by Bupa with the claimed amount, without calculating an exchange
 rate. Never subtract `paid` from `claimed` when their currencies differ.
 `report.totals` groups each amount by its own currency. A converted claim counts
 in both currency groups; use `claimCount` for the total number of claims.
+
+An interrupted sync can resume validated PDF downloads for 24 hours. Every retry
+still requires manual login and member verification and fetches fresh attachment
+lists. Matching saved PDFs are checked against their checkpoint size and SHA-256;
+new, changed or missing attachments download normally. Successful sync invalidates
+these checkpoints, and `--full-refresh` always downloads again. Download reuse
+does not approve a document or bypass parsing and assessment review.
 
 Offline parsing honours content-specific supporting-document reviews saved by the
 desktop app. To classify an image-only receipt, open SCUPA normally and use

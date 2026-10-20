@@ -36,7 +36,11 @@ date filter; manual login and member verification stay the same.
 
 Parsing returns records with structured errors and human-readable warnings.
 Unparsed benefit rows, missing or multiple payment totals, and uncertain currency
-block the batch. The service merges these records directly; `parsed.json` is a
+defer every claim referenced by the affected document. Recognised Bupa layouts
+need no manual approval. New deferred claims become placeholders with blank
+amounts; existing assessments are preserved. Other validated claims still merge.
+Corrupt archive metadata and conflicting ownership block the entire batch.
+The service merges parser results directly; `parsed.json` is a
 diagnostic snapshot, not a second input. Reparse updates available statement
 metadata while preserving identity, audit notes and values missing from the new
 statement. Payment dates follow the selected assessment, including a restored

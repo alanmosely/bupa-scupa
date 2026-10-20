@@ -7,7 +7,7 @@ fs.mkdirSync('.cache/portal-tests', { recursive: true });
 process.env.SCUPA_DATA_DIR = fs.mkdtempSync(path.resolve('.cache/portal-tests/archive-'));
 process.env.SCUPA_PDFTOTEXT = path.resolve('vendor/xpdf/pdftotext.exe');
 const { launchInstalledBrowser } = await import('../src/core/browser.js');
-const { saveConfig, loadConfig, RAW } = await import('../src/core/util.js');
+const { saveConfig, loadConfig, RAW, REPORTS } = await import('../src/core/util.js');
 const { fetchHousehold, portalList } = await import('../src/core/portal.js');
 const { MASTER } = await import('../src/core/util.js');
 saveConfig({
@@ -23,8 +23,14 @@ let listResponse;
 let detailsResponse;
 let downloadStatements = false;
 let downloadFailure = false;
+let failOtherMember = false;
+let invalidDirectBody = false;
+let burst = false;
+let detailsRequests = 0;
+let rateLimitAt = 0;
 let paid = '80.00';
 const downloads = [];
+const browserDownloads = [];
 async function launchBrowser(options) {
   const browser = await launchInstalledBrowser(options);
   const makeContext = browser.newContext.bind(browser);
@@ -36,13 +42,20 @@ async function launchBrowser(options) {
       assert.equal(url.origin, 'https://membersworld.bupaglobal.com');
       assert.equal(url.pathname, '/api/sitecore/Plan/DownloadFile');
       const ref = url.searchParams.get('fileId');
-      const failed = ref === 'fail';
+      const failed = ref === 'fail' || (failOtherMember && ref === OTHER);
       assert.ok(failed || [REF, OTHER].includes(ref));
       downloads.push(ref);
       return {
         ok: () => !failed,
         status: () => (failed ? 403 : 200),
-        body: async () => syntheticPdf(statement({ ref, paid })),
+        url: () => href,
+        headers: () => ({ 'content-type': 'application/pdf' }),
+        body: async () =>
+          invalidDirectBody && ref === REF
+            ? Buffer.from(
+                '<html><form><input name="token" value="private-test-token"></form></html>',
+              )
+            : syntheticPdf(statement({ ref, paid })),
         dispose: async () => {},
       };
     };
@@ -54,20 +67,55 @@ async function launchBrowser(options) {
         return;
       }
       let html;
-      if (url.pathname.endsWith('GetAllClaimsActivity'))
+      if (url.pathname.endsWith('DownloadFile')) {
+        const ref = url.searchParams.get('fileId');
+        assert.ok([REF, OTHER].includes(ref));
+        browserDownloads.push(ref);
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/pdf',
+          body: syntheticPdf(statement({ ref, paid })),
+        });
+        return;
+      }
+      if (url.pathname.endsWith('GetAllClaimsActivity')) {
+        const refs =
+          selected === 'test_member' && burst
+            ? [
+                REF,
+                ...Array.from(
+                  { length: 99 },
+                  (_, i) => `CL000101${String(i + 100).padStart(6, '0')}`,
+                ),
+              ]
+            : [selected === 'test_member' ? REF : OTHER];
         html =
           listResponse ??
           (selected === 'empty_member'
             ? '<div>No claims</div>'
-            : `<div class="claims-data" id="${selected === 'test_member' ? REF : OTHER}" onclick="show('01/01/2000')"></div>`);
-      else if (url.pathname.endsWith('GetClaimDetails'))
+            : refs
+                .map(
+                  (ref) =>
+                    `<div class="claims-data" id="${ref}" onclick="show('01/01/2000')"></div>`,
+                )
+                .join(''));
+      } else if (url.pathname.endsWith('GetClaimDetails')) {
+        detailsRequests++;
+        if (detailsRequests === rateLimitAt) {
+          await route.fulfill({
+            status: 429,
+            headers: { 'Retry-After': '1' },
+            body: 'Temporary rate limit',
+          });
+          return;
+        }
         html = downloadStatements
           ? `<a href="/api/sitecore/Plan/DownloadFile?fileId=${url.searchParams.get('claimId')}" data-analytics-link="bupa-statement">Benefit statement</a>` +
             (downloadFailure
               ? '<a href="/api/sitecore/Plan/DownloadFile?fileId=fail" data-analytics-link="bupa-statement">Second statement</a>'
               : '')
           : (detailsResponse ?? '<div>Claim details: no attachments</div>');
-      else {
+      } else {
         if (url.pathname === '/member/second') selected = 'other_member';
         if (url.pathname === '/member/empty') selected = 'empty_member';
         html =
@@ -184,6 +232,21 @@ assert.equal(originalFiles[0], originalFiles[2]);
 assert.notEqual(originalFiles[0], originalFiles[1]);
 assert.equal(fs.readdirSync(directory).filter((file) => file.endsWith('.pdf')).length, 2);
 
+// Exercise a real browser fetch when the direct transport returns an HTML body
+// mislabeled as a PDF. Only the validated fallback may enter the archive.
+invalidDirectBody = true;
+await fetchHousehold({ launchBrowser, fullRefresh: true, confirmMember: async () => true });
+invalidDirectBody = false;
+assert.deepEqual(browserDownloads, [REF]);
+assert.equal(JSON.parse(fs.readFileSync(currentFile, 'utf8')).files[0], originalFiles[0]);
+assert.equal(fs.readdirSync(directory).filter((file) => file.endsWith('.pdf')).length, 2);
+const diagnostics = fs.readFileSync(path.join(REPORTS, 'download-errors.jsonl'), 'utf8');
+assert.doesNotMatch(diagnostics, /private-test-token|<html|<form|fileId/);
+const diagnostic = JSON.parse(diagnostics.trim());
+assert.equal(diagnostic.format, 'html');
+assert.equal(diagnostic.status, 200);
+assert.equal(diagnostic.pdfHeader, false);
+
 const currentBefore = fs.readFileSync(currentFile);
 const masterBefore = fs.readFileSync(MASTER);
 downloadFailure = true;
@@ -199,6 +262,58 @@ assert.deepEqual(fs.readFileSync(MASTER), masterBefore);
 assert.equal(fs.readdirSync(directory).filter((file) => file.endsWith('.pdf')).length, 3);
 downloadStatements = false;
 downloadFailure = false;
+
+// Interrupt after the holder's complete download. A normal retry must still
+// verify all profiles and attachment lists but only fetch the missing PDF.
+downloadStatements = true;
+failOtherMember = true;
+downloads.length = 0;
+const resumeMaster = MASTER + '.resume-test';
+fs.renameSync(MASTER, resumeMaster);
+await assert.rejects(
+  () => fetchHousehold({ launchBrowser, fullRefresh: true, confirmMember: async () => true }),
+  /HTTP 403/,
+);
+assert.deepEqual(downloads, [REF, OTHER]);
+assert.equal(fs.existsSync(MASTER), false);
+failOtherMember = false;
+downloads.length = 0;
+detailsRequests = 0;
+const resumedProgress = [];
+await fetchHousehold({
+  launchBrowser,
+  confirmMember: async () => true,
+  emit: (event) => resumedProgress.push(event),
+});
+assert.deepEqual(downloads, [OTHER], 'Completed PDFs are not downloaded again after failure');
+assert.equal(detailsRequests, 2, 'Fresh attachment lists are checked for both members');
+assert.ok(resumedProgress.some((event) => /resuming/.test(event.message)));
+assert.equal(fs.existsSync(MASTER), false);
+fs.renameSync(resumeMaster, MASTER);
+assert.deepEqual(fs.readFileSync(MASTER), masterBefore);
+downloadStatements = false;
+
+// A long first import must recover from a rate limit on its 100th request.
+burst = true;
+detailsRequests = 0;
+rateLimitAt = 100;
+const progress = [];
+const largeImport = await fetchHousehold({
+  launchBrowser,
+  fullRefresh: true,
+  confirmMember: async () => true,
+  emit: (event) => progress.push(event),
+});
+assert.deepEqual(
+  largeImport.map((member) => member.claims),
+  [100, 1, 0],
+);
+assert.equal(detailsRequests, 102, 'Only the rate-limited request is repeated');
+assert.ok(progress.some((event) => /limiting requests/.test(event.message)));
+assert.equal(JSON.parse(fs.readFileSync(manifest, 'utf8')).claims.length, 100);
+assert.deepEqual(fs.readFileSync(MASTER), masterBefore);
+burst = false;
+rateLimitAt = 0;
 
 const browser = await launchBrowser({ headless: false });
 try {
@@ -223,5 +338,5 @@ try {
   await browser.close();
 }
 console.log(
-  'Synthetic portal smoke passed: member checks, zero claims, full refresh, restored PDF revisions, failed download preservation, cancellation, and refusal of unfamiliar responses. No real Bupa requests.',
+  'Synthetic portal smoke passed: member checks, zero claims, full refresh, PDF revisions, validated browser download fallback, private diagnostics, failed download preservation, interrupted-download resume, 100-claim rate limits, cancellation, and refusal of unfamiliar responses. No real Bupa requests.',
 );

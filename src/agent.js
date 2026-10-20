@@ -111,7 +111,9 @@ export function envelope(command, result, error) {
           error: {
             code: error.code || 'OPERATION_FAILED',
             message: error.message,
-            retryable: ['BUSY', 'LOGIN_TIMEOUT', 'BROWSER_CLOSED'].includes(error.code),
+            retryable:
+              error.retryable === true ||
+              ['BUSY', 'LOGIN_TIMEOUT', 'BROWSER_CLOSED'].includes(error.code),
           },
         }
       : { result }),

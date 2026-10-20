@@ -9,6 +9,9 @@ const { launchInstalledBrowser } = await import('../src/core/browser.js');
 const { fetchHousehold } = await import('../src/core/portal.js');
 const { loadConfig, RAW } = await import('../src/core/util.js');
 let ambiguous = false;
+let wrongClaimsLink = false;
+let wrongClaimsList = false;
+let expireSecond = false;
 const browsers = [];
 async function launchBrowser(options) {
   const browser = await launchInstalledBrowser(options);
@@ -29,7 +32,10 @@ async function launchBrowser(options) {
       const claimsQuery = selected === 'holder' ? '' : '?memberid=' + selected;
       const nav =
         '<a href="/logout">Log out</a><a href="/plan">Manage Your Plan</a><a href="/plan/dependants">Dependants overview</a>' +
-        `<a href="/en/my-claims${claimsQuery}">View all claims</a>`;
+        // Desktop/mobile navigation can precede the selected member's own link.
+        '<a href="/en/my-claims">My claims</a>' +
+        '<a href="/my-claims">My claims</a>' +
+        `<a href="/en/my-claims${wrongClaimsLink ? '?memberid=holder' : claimsQuery}">View all claims</a>`;
       // Synthetic markup shaped like the live portal. The holder is not a dependant card.
       const members =
         '<main><a class="m-card-sum-header" href="/en/plan?memberid=second"><h2 class="m-card-sum-title">Second Person (Partner)</h2></a>' +
@@ -46,8 +52,15 @@ async function launchBrowser(options) {
           ? ''
           : selected === 'third'
             ? '<div>No claims</div>'
-            : `<div class="claims-data" id="${selected === 'holder' ? REF : OTHER}" onclick="show('01/01/2000')"></div>`;
-      if (url.pathname.endsWith('GetClaimDetails')) body = '<div>No attachments</div>';
+            : `<div class="claims-data" id="${selected === 'holder' || wrongClaimsList ? REF : OTHER}" onclick="show('01/01/2000')"></div>`;
+      if (url.pathname.endsWith('GetClaimDetails')) {
+        if (selected === 'second' && expireSecond) {
+          expireSecond = false;
+          await route.fulfill({ status: 401, body: 'Signed out' });
+          return;
+        }
+        body = '<div>No attachments</div>';
+      }
       await route.fulfill({ status: 200, contentType: 'text/html', body });
     });
     return context;
@@ -89,6 +102,65 @@ const ids = Object.keys(loadConfig().members);
 assert.equal(fs.existsSync(path.join(RAW, ids[0], REF)), true);
 assert.equal(fs.existsSync(path.join(RAW, ids[1], OTHER)), true);
 assert.equal(Object.values(loadConfig().members)[0].self, true);
+// A failed first import keeps raw history but has no master yet. A retry must
+// still select each dependant rather than importing the holder twice.
+const repeated = await fetchHousehold({
+  launchBrowser,
+  confirmMember: async () => true,
+});
+assert.deepEqual(
+  repeated.map((member) => member.claims),
+  [1, 1, 0],
+);
+const manifestPath = path.join(RAW, ids[1], 'manifest.json');
+const manifestBefore = fs.readFileSync(manifestPath);
+wrongClaimsLink = true;
+await assert.rejects(() => fetchHousehold({ launchBrowser, confirmMember: async () => true }), {
+  code: 'PORTAL_CHANGED',
+});
+assert.deepEqual(fs.readFileSync(manifestPath), manifestBefore);
+// Even a correctly addressed link must still pass cross-member verification.
+wrongClaimsLink = false;
+wrongClaimsList = true;
+await assert.rejects(
+  () => fetchHousehold({ launchBrowser, confirmMember: async () => true }),
+  /known refs/,
+);
+assert.deepEqual(fs.readFileSync(manifestPath), manifestBefore);
+wrongClaimsList = false;
+expireSecond = true;
+let signIns = 0;
+const recovered = await fetchHousehold({
+  launchBrowser,
+  confirmMember: async () => true,
+  emit: (event) => {
+    if (event.phase === 'login' && /signed you out/.test(event.message)) signIns++;
+  },
+});
+assert.equal(signIns, 1);
+assert.deepEqual(
+  recovered.map((member) => member.claims),
+  [1, 1, 0],
+);
+assert.equal(
+  fs.existsSync(path.join(RAW, ids[1], REF)),
+  false,
+  'Recovery restores the dependant, not the holder',
+);
+const recoveredManifest = fs.readFileSync(manifestPath);
+expireSecond = true;
+await assert.rejects(
+  () =>
+    fetchHousehold({
+      launchBrowser,
+      confirmMember: async () => true,
+      emit: (event) => {
+        if (event.phase === 'login' && /signed you out/.test(event.message)) wrongClaimsList = true;
+      },
+    }),
+  /known refs/,
+);
+assert.deepEqual(fs.readFileSync(manifestPath), recoveredManifest);
 assert.equal(
   browsers.every((browser) => !browser.isConnected()),
   true,

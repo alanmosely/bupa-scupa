@@ -37,7 +37,25 @@ AGENT_API.md and use the supported API rather than editing records directly.
 The profile uses `h3.a-list-lval-key` and `p.a-list-lval-value`. Dependant card
 headings include relationship suffixes. Preserve `memberid` in dependant links:
 query-free `/my-claims` returns to the holder, who is absent from dependant cards.
+Global desktop/mobile claims links can precede the dependant's own claims link;
+match its `memberid` against the selected member card before navigating.
 Discovery must stop on ambiguous metadata and require human confirmation.
+Pace bulk requests. Distinguish HTTP 429/5xx failures from actual login expiry,
+respect `Retry-After`, and preserve cancellation during cooldowns. After manual
+sign-in recovery, restore the selected member and recheck claim ownership before
+resuming any request.
+Reject invalid PDF bodies even when HTTP and Content-Type look successful. A
+browser-fetch fallback must pass the same PDF checks and size limit. Download
+diagnostics may retain only typed metadata in the private reports folder, never
+response bodies, authentication tokens, cookies or request URLs.
+Persist download progress after each validated PDF. Resume only after fresh
+member verification and attachment discovery, checking file identity, size and
+SHA-256. Checkpoints expire after 24 hours and a successful sync invalidates them;
+full refresh always downloads again. Never treat a checkpoint as assessment approval.
+Recognised Bupa statements import automatically after amount validation. Defer
+only affected claims when a document needs review; preserve existing payments and
+show new claims with unknown amounts. Corrupt archive metadata and ambiguous
+cross-member ownership must still block every master update. Never guess amounts.
 
 ## Publication
 
