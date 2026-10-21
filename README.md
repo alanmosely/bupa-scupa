@@ -24,8 +24,8 @@ Open the EXE, or extract the ZIP and run `BUPA SCUPA.exe`.
 Browse saved claims offline, filter by member or status, and open the original PDFs.
 Back up your archive regularly.
 
-Version 0.2.0 adds claim details, personal follow-ups and saved views. See the
-[release notes](https://github.com/alanmosely/bupa-scupa/releases/tag/v0.2.0).
+Version 0.3.0 includes claim details, personal follow-ups and saved views, plus
+the import and recovery improvements described below.
 
 Select a claim to see its dates, invoice number, payment recipient, benefit category
 and current PDFs. Expand **Your follow-up** to add personal notes, the date you last
@@ -37,19 +37,20 @@ additional sorting. You can also sort with the column headings. The **Views** me
 lets you save and reuse these settings for this archive.
 **Export shown claims** exports the current results in the same order.
 
-## 0.3.0 release candidate
+## Version 0.3.0
 
-Version **0.3.0-rc.1** adds automatic imports for recognised Bupa statements,
+Version **0.3.0** adds automatic imports for recognised Bupa statements,
 isolates documents needing attention, resumes interrupted PDF downloads for
 24 hours, and improves member switching, rate-limit handling and session recovery.
-It is an unsigned prerelease with fresh packaged live-sync acceptance still
-outstanding. See the [release notes](https://github.com/alanmosely/bupa-scupa/releases/tag/v0.3.0-rc.1).
+This is a stable release. The binaries are unsigned, and a fresh packaged live
+sync remains an outstanding acceptance check. See the
+[release notes](https://github.com/alanmosely/bupa-scupa/releases/tag/v0.3.0).
 
-Candidate download links become available when the prerelease is published:
-[portable EXE](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0-rc.1/bupa-scupa-x64.exe),
-[application ZIP](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0-rc.1/bupa-scupa-0.3.0-rc.1-x64.zip),
-[source](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0-rc.1/bupa-scupa-0.3.0-rc.1-source.zip),
-and [checksums](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0-rc.1/SHA256SUMS.txt).
+Version-specific downloads become available when the release is published:
+[portable EXE](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0/bupa-scupa-x64.exe),
+[application ZIP](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0/bupa-scupa-0.3.0-x64.zip),
+[source](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0/bupa-scupa-0.3.0-source.zip),
+and [checksums](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0/SHA256SUMS.txt).
 
 ## Agents and scripts
 
