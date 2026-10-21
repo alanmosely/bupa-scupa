@@ -1,0 +1,63 @@
+# BUPA SCUPA 0.3.0
+
+This stable release improves long household imports and makes saved claims
+available without confirming every routine statement. It includes the changes
+from 0.3.0-rc.1 with the stable application version. Replacing the app preserves
+your existing archive; back up the entire archive folder before updating.
+
+- Recognised Bupa statements and reassessments import automatically after amount
+  and currency validation. Only unfamiliar, unreadable or ambiguous documents
+  need attention. Other claims still import; existing payment values stay intact
+  for deferred claims and new deferred claims have blank amounts.
+- Needs attention includes deferred statement imports, and Archive help shows
+  the exceptional documents rather than a confirmation button for every statement.
+- Retrying an interrupted sync within 24 hours reuses validated PDFs saved after
+  the last successful sync. Member ownership and fresh attachment lists are
+  checked first; saved PDFs must still match their size and SHA-256. Full refresh
+  downloads everything again. Existing recent complete claims can also resume.
+- Dependant navigation retains the selected member ID even when desktop/mobile
+  navigation contains earlier account-holder claims links. Cross-member reference
+  checks remain required.
+- Bulk requests are paced. Rate limits and server errors use cancellable backoff
+  and respect Retry-After. A genuine expired login pauses for manual sign-in,
+  restores the member and rechecks ownership before continuing.
+- Incomplete or non-PDF responses retry through the logged-in browser with the
+  same PDF checks and size limit. Private diagnostics retain typed metadata,
+  never response bodies, authentication data or download URLs.
+- The JSON API adds optional reviewRequired to successful parse/sync results.
+  Corrupt archive metadata and conflicting ownership still block master updates.
+- Builds retry temporary upstream failures when downloading pinned FFmpeg build
+  materials, with unchanged source-integrity checks.
+
+## Downloads
+
+These links become available when the release is published:
+
+- [Portable EXE](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0/bupa-scupa-x64.exe)
+- [Application ZIP](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0/bupa-scupa-0.3.0-x64.zip)
+- [Corresponding source](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0/bupa-scupa-0.3.0-source.zip)
+- [SHA-256 checksums](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.0/SHA256SUMS.txt)
+
+The permanent latest-EXE link serves this version once it is published as latest.
+
+## Validation and remaining acceptance
+
+Tested on Windows 11 x64, OS build 26300. Automated coverage includes 105 tests,
+desktop and synthetic portal workflows, packaged and portable agent commands,
+cancellation, source privacy checks and release artifact inspection. No dependency
+versions changed.
+
+A live household download completed, and an offline import made the saved claims
+available with exceptions isolated. A fresh live end-to-end sync of the current
+packaged version, including a zero-claim profile and live session/download
+recovery, remains outstanding. Those cases have synthetic coverage. The maintainer
+authorised stable publication with this limitation disclosed.
+
+Requires Windows 10/11 x64 and installed Edge or Chrome. The binaries are unsigned;
+fresh-machine acceptance has not been performed. See docs/VALIDATION.md in the
+corresponding source for the detailed evidence and limits.
+
+Archive files contain readable health records and must stay private. SCUPA is
+independent of Bupa. Both binary downloads retain matching FFmpeg source, patches,
+build materials and LGPL notices in resources/ffmpeg, plus Xpdf source and notices
+in resources/xpdf. Preserve these materials when redistributing.

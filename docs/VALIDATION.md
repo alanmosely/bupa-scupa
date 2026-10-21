@@ -1,5 +1,23 @@
 # Validation
 
+## Version 0.3.0 — 21 October 2026
+
+Version 0.3.0 promotes the automatic-import and sync-recovery changes from
+0.3.0-rc.1 to a stable release at the maintainer's request. Application and
+dependency behaviour is unchanged; the application version and release documents
+are updated. Binaries are rebuilt with the stable version. The automated release
+procedure and exact artifact checks apply to this build.
+
+The maintainer authorised stable publication with fresh packaged live-sync
+acceptance still outstanding. This changes the release designation, not the
+scope of the live evidence recorded below.
+
+The stable release also retries temporary HTTP failures while downloading pinned
+FFmpeg build materials, after hosted builds encountered upstream HTTP 503s.
+Source hashes remain mandatory before caching or packaging. Regression coverage
+checks recovery, bounded retries, permanent HTTP failures and refused changed
+source bytes, bringing the automated suite to 105 tests.
+
 ## Automatic statements and partial imports — 20 October 2026
 
 Recognised Bupa statements now import without routine confirmation. Unfamiliar
@@ -148,8 +166,9 @@ pending document review and parsing issues. The subsequent offline import on
 end-to-end sync of the current packaged version, including zero-claim profiles
 and live session/download recovery, remains outstanding. Live login, discovery
 and cancellation have also been exercised; synthetic tests cover the remaining
-paths without establishing complete live compatibility. Version 0.3.0-rc.1 is
-therefore published as a prerelease.
+paths without establishing complete live compatibility. Version 0.3.0-rc.1 was
+published as a prerelease for this reason. On 21 October 2026 the maintainer
+authorised version 0.3.0 as a stable release with this limitation disclosed.
 
 The Windows binaries are unsigned. Testing on a fresh Windows installation is
 outside this release's scope. Hosted check and build results are available in

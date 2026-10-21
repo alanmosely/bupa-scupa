@@ -22,7 +22,10 @@ async function launch(command, index) {
       stdio: ['ignore', 'pipe', 'pipe'],
     },
   );
-  child.stdout.resume();
+  let stdout = '';
+  child.stdout.on('data', (chunk) => {
+    stdout = (stdout + chunk.toString()).slice(-4000);
+  });
   let stderr = '';
   child.stderr.on('data', (chunk) => {
     stderr = (stderr + chunk.toString()).slice(-4000);
@@ -41,7 +44,14 @@ async function launch(command, index) {
       if (code !== 0)
         reject(
           new Error(
-            'Concurrent portable command failed: ' + command + ' (' + code + ')\n' + stderr,
+            'Concurrent portable command failed: ' +
+              command +
+              ' (' +
+              code +
+              ')\n' +
+              stderr +
+              '\nAgent output: ' +
+              (fs.existsSync(output) ? fs.readFileSync(output, 'utf8') : stdout || '(none)'),
           ),
         );
       else resolve();
