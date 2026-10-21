@@ -3,7 +3,66 @@ import path from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { create } from 'tar';
-import { verifyFfmpegSource, ffmpegLock, sourceHash } from '../scripts/ffmpeg-source.js';
+import {
+  verifyFfmpegSource,
+  ffmpegLock,
+  sourceHash,
+  downloadSource,
+} from '../scripts/ffmpeg-source.js';
+
+test('source downloads retry temporary HTTP failures but never accept incorrect source bytes', async () => {
+  const bytes = Buffer.from('synthetic source');
+  const source = {
+    name: 'synthetic-source.txt',
+    url: 'https://example.invalid/source',
+    sha256: await sourceHash(bytes),
+  };
+  const waits = [];
+  let calls = 0;
+  const downloaded = await downloadSource(source, {
+    request: async () =>
+      new globalThis.Response(++calls < 3 ? 'Unavailable' : bytes, {
+        status: calls < 3 ? 503 : 200,
+      }),
+    pause: async (ms) => waits.push(ms),
+  });
+  assert.deepEqual(downloaded, bytes);
+  assert.equal(calls, 3);
+  assert.deepEqual(waits, [1000, 2000]);
+
+  calls = 0;
+  waits.length = 0;
+  await assert.rejects(
+    downloadSource(source, {
+      request: async () => {
+        calls++;
+        return new globalThis.Response('Unavailable', { status: 503 });
+      },
+      pause: async (ms) => waits.push(ms),
+    }),
+    /Source download failed: HTTP 503/,
+  );
+  assert.equal(calls, 5);
+  assert.deepEqual(waits, [1000, 2000, 4000, 8000]);
+
+  for (const [status, body, error] of [
+    [404, 'Not found', /Source download failed: HTTP 404/],
+    [200, 'wrong source bytes', /source integrity failed/],
+  ]) {
+    calls = 0;
+    await assert.rejects(
+      downloadSource(source, {
+        request: async () => {
+          calls++;
+          return new globalThis.Response(body, { status });
+        },
+        pause: async () => assert.fail('Permanent failures must not retry'),
+      }),
+      error,
+    );
+    assert.equal(calls, 1);
+  }
+});
 
 test('source content pins ignore timestamps but reject changed files and duplicate paths', async () => {
   fs.mkdirSync('.cache/source-tests', { recursive: true });

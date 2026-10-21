@@ -47,6 +47,11 @@ release gates. Describe this release as unsigned and report the Windows version
 actually tested. The [signing](SIGNING.md) and [clean Windows](CLEAN_WINDOWS.md)
 procedures are optional future work.
 
+For version 0.3.0, the maintainer explicitly authorised a stable release on
+21 October 2026 with the fresh packaged live-sync acceptance check still
+outstanding. Record that limitation in the release notes and validation evidence;
+the remaining automated, packaging and publication checks still apply.
+
 ## Publish
 
 Tag the reviewed commit in [bupa-scupa](https://github.com/alanmosely/bupa-scupa).
