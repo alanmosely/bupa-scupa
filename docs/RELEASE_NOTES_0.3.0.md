@@ -26,6 +26,8 @@ your existing archive; back up the entire archive folder before updating.
   never response bodies, authentication data or download URLs.
 - The JSON API adds optional reviewRequired to successful parse/sync results.
   Corrupt archive metadata and conflicting ownership still block master updates.
+- Builds retry temporary upstream failures when downloading pinned FFmpeg build
+  materials, with unchanged source-integrity checks.
 
 ## Downloads
 
@@ -40,7 +42,7 @@ The permanent latest-EXE link serves this version once it is published as latest
 
 ## Validation and remaining acceptance
 
-Tested on Windows 11 x64, OS build 26300. Automated coverage includes 104 tests,
+Tested on Windows 11 x64, OS build 26300. Automated coverage includes 105 tests,
 desktop and synthetic portal workflows, packaged and portable agent commands,
 cancellation, source privacy checks and release artifact inspection. No dependency
 versions changed.

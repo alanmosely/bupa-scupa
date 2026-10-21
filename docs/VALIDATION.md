@@ -12,6 +12,12 @@ The maintainer authorised stable publication with fresh packaged live-sync
 acceptance still outstanding. This changes the release designation, not the
 scope of the live evidence recorded below.
 
+The stable release also retries temporary HTTP failures while downloading pinned
+FFmpeg build materials, after hosted builds encountered upstream HTTP 503s.
+Source hashes remain mandatory before caching or packaging. Regression coverage
+checks recovery, bounded retries, permanent HTTP failures and refused changed
+source bytes, bringing the automated suite to 105 tests.
+
 ## Automatic statements and partial imports — 20 October 2026
 
 Recognised Bupa statements now import without routine confirmation. Unfamiliar

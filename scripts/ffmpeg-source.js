@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
 import { list } from 'tar';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -58,6 +59,23 @@ async function verifySource(bytes, source) {
     assert.fail('FFmpeg source integrity failed: ' + source.name);
   }
   assert.equal(digest, source.sha256, 'FFmpeg source integrity failed: ' + source.name);
+}
+export async function downloadSource(source, { request = fetch, pause = delay } = {}) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const response = await request(source.url, { signal: AbortSignal.timeout(180000) });
+    if (!response.ok) {
+      await response.body?.cancel();
+      if ((response.status === 429 || response.status >= 500) && attempt < 4) {
+        console.log(`Source download HTTP ${response.status}; retrying ${source.name}`);
+        await pause(1000 * 2 ** attempt);
+        continue;
+      }
+      throw new Error('Source download failed: HTTP ' + response.status);
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    await verifySource(bytes, source);
+    return bytes;
+  }
 }
 function tarFile(archive, name) {
   const result = spawnSync('tar', ['-xOf', archive, name], {
@@ -135,10 +153,7 @@ export async function prepareFfmpegSource() {
     const cached = path.join(cache, source.name);
     if (!fs.existsSync(cached)) {
       console.log('Downloading ' + source.name);
-      const response = await fetch(source.url, { signal: AbortSignal.timeout(180000) });
-      if (!response.ok) throw new Error('Source download failed: HTTP ' + response.status);
-      const bytes = Buffer.from(await response.arrayBuffer());
-      await verifySource(bytes, source);
+      const bytes = await downloadSource(source);
       fs.writeFileSync(cached, bytes);
     }
     await verifySource(fs.readFileSync(cached), source);
