@@ -61,9 +61,15 @@ async function launch(command, index) {
   assert.equal(result.ok, true);
   assert.equal(result.command, command);
 }
-// Start both immediately; wait for both even if one fails so no test is abandoned.
-const results = await Promise.allSettled([launch('schema', 1), launch('status', 2)]);
-for (const result of results) if (result.status === 'rejected') throw result.reason;
+// Every pair must pass. Use fresh output/archive paths for each pair so an
+// earlier result cannot hide a missing response from a later invocation.
+for (let round = 0; round < 3; round++) {
+  const results = await Promise.allSettled([
+    launch('schema', round * 2 + 1),
+    launch('status', round * 2 + 2),
+  ]);
+  for (const result of results) if (result.status === 'rejected') throw result.reason;
+}
 console.log(
-  'Concurrent portable agent invocations passed with isolated empty archives and system-only PATH. No login or real records.',
+  'Three consecutive pairs of concurrent portable agent invocations passed with isolated empty archives and system-only PATH. No login or real records.',
 );

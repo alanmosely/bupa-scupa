@@ -46,6 +46,13 @@ Electron is updated to 44.9.3 for
 [GHSA-jr5w-w6x2-84p9](https://github.com/advisories/GHSA-jr5w-w6x2-84p9),
 with matching FFmpeg source and binary provenance. The dependency audit is clear.
 
+An initial hosted concurrent-launch check exited with native Windows code
+0xC0000094 before producing an agent response. Six additional local repetitions
+and a four-command stress check on two CPU cores passed; the cause was not
+reproduced. The concurrency gate now requires three consecutive pairs with fresh
+archives and output files, and CI records matching Windows crash events on
+failure. A complete hosted run is required before publication.
+
 The binaries are unsigned. Fresh-machine testing and a fresh live end-to-end
 sync of this packaged version have not been performed. Session recovery,
 zero-claim members and failed downloads have synthetic coverage; no live Bupa

@@ -10,6 +10,13 @@ OS build 26300, including the related-statement link in claim details; its
 synthetic screenshot was reviewed. Packaged, portable-agent, synthetic portal
 and exact artifact checks remain required before publication.
 
+An initial hosted concurrent-launch check exited with native Windows code
+0xC0000094 before producing an agent response. Six additional local repetitions
+and a four-command stress check on two CPU cores passed; the cause was not
+reproduced. The concurrency gate now requires three consecutive pairs with fresh
+archives and output files, and CI records matching Windows crash events on
+failure. A complete hosted run is required before publication.
+
 A fresh dependency audit identified GHSA-jr5w-w6x2-84p9 in the previous Electron
 version. Electron is pinned to 44.9.3 and its audit is clear. Its official Windows
 x64 runtime ZIP and FFmpeg DLL hashes were verified; matching Electron source,
