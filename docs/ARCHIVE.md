@@ -56,6 +56,15 @@ their own currencies. The summary covers the latest run in this window and clear
 when another run starts or you change archives. Change reports are also saved in
 `reports/`.
 
+Changes to Bupa's assessment reasons count as updates even when the payment and
+status stay the same. Dated assessment-note entries retain the new reason and the
+previous audit history. Rechecking unchanged PDFs does not add repeat entries.
+
+A statement can assess several claims. Claim details includes related statements
+saved under another claim for the same member. Links must still match the current
+PDF selection, SHA-256 and claim references extracted from the PDF. Recheck saved
+PDFs once to build these links for an archive parsed by an older version.
+
 In the master CSV, `currency` describes `claimed` and `paid_currency` describes
 `paid`; `invoice` holds the provider invoice number. Earlier CSVs without invoice
 numbers or with one currency remain readable. Their header is
@@ -128,6 +137,21 @@ Open **Archive help** to see affected files. Keep these diagnostics private.
 Recognised Bupa statements import automatically, including reassessments. SCUPA
 checks the Bupa layout and issuer details, benefit rows, payment totals and
 currencies. Routine statements do not need a confirmation click.
+
+Where Bupa labels an amount as before tax/discount, the claim amount uses the
+final invoice column. The original figure is retained in the assessment notes.
+A provider discount is not an unpaid balance. Unlabelled columns and actual
+benefit reductions still require the usual checks; payment totals remain authoritative.
+Statements with several distinct invoice blocks retain every invoice number and
+combine their validated payments only when their currencies and recipients agree.
+Already-assessed duplicate invoices stay in the notes rather than creating a new
+shortfall alongside a separately paid invoice. Conflicting identities or repeated
+totals within one invoice still require review.
+
+Readable booking confirmations, order confirmations and itemised till receipts
+are recognised as supporting evidence when they contain no assessment markers.
+They cannot establish a Bupa payment. Image-only receipts still need the
+content-specific supporting review described below, even beside a readable assessment.
 
 Only affected claims are held back when a document is unfamiliar, unreadable or
 has ambiguous amounts. Other claims appear normally. New affected claims appear

@@ -1,5 +1,76 @@
 # Validation
 
+## Version 0.3.1 — 23 October 2026
+
+The stable release combines the four assessment/session review fixes and the
+invoice/supporting-document corrections documented below. All 119 automated
+tests pass with PDF extraction and FFmpeg source checks required. Source privacy,
+lint, types and formatting pass. Desktop checks pass on Windows 11 Home x64,
+OS build 26300, including the related-statement link in claim details; its
+synthetic screenshot was reviewed. Packaged, portable-agent, synthetic portal
+and exact artifact checks remain required before publication.
+
+A fresh dependency audit identified GHSA-jr5w-w6x2-84p9 in the previous Electron
+version. Electron is pinned to 44.9.3 and its audit is clear. Its official Windows
+x64 runtime ZIP and FFmpeg DLL hashes were verified; matching Electron source,
+Chromium 152.0.7977.167 materials, patches and notices are included. The FFmpeg,
+Opus and NASM source contents and codec settings are unchanged, and Electron's
+FFmpeg patch applies to the supplied source. See [THIRD_PARTY.md](THIRD_PARTY.md).
+
+The maintainer authorised stable publication with the existing live-acceptance
+limitation disclosed. No fresh packaged live household sync or fresh-machine
+check was performed. The binaries remain unsigned.
+
+## Final invoice amounts and multi-invoice assessments — 23 October 2026
+
+Labelled tax/discount tables now use the final invoice amount and retain the
+original figure in notes. Unlabelled reductions remain partial payments. Distinct
+invoice blocks are validated independently before combining compatible payments;
+duplicate declines never erase another invoice's payment or create a new shortfall.
+Cancellation without a confirmed replacement remains a rejected assessment for review.
+Wrapped provider details and a uniquely shared payment date are retained.
+
+Readable booking/order confirmations and itemised till receipts are recognised
+as supporting documents without allowing assessment markers to be bypassed.
+Scans still require an explicit review bound to their current filename and hash.
+No review requirement or archive ownership check was weakened.
+
+All 119 automated tests pass with PDF extraction required, including net invoice
+costs, actual shortfalls, mixed invoices, conflicting totals/currencies/payees,
+converted invoice sums and preserved pinned, scheduled and pending-import flags.
+Syntax/privacy, lint, type and formatting checks pass. Source import and claims
+desktop smokes and the packaged import desktop smoke pass on Windows x64.
+The rebuilt portable EXE passes the offline agent smoke with only Windows system
+tools on PATH: JSON contracts, output preflight, dry-run changes, progress events,
+status, merge, report, claims, idempotence and structured errors.
+Packaged verification against a private archive also confirmed the corrected
+amounts and preservation of the expected follow-ups; its records and screenshots
+remain outside public source. No live sync or public release was performed.
+
+## Assessment and session review fixes — 23 October 2026
+
+Duplicate-decline wording no longer replaces a positive authoritative payment
+total. Regression coverage includes mixed paid/duplicate items, converted amounts,
+zero-paid duplicates and repair of previously imported incorrect values.
+
+Manual sign-in recovery now covers claims lists, member navigation and the
+post-confirmation snapshot as well as attachment requests. The member is restored
+and ownership checked before retrying. Tests cover all four expiry points,
+cancellation and refusal of a foreign claims list after sign-in.
+
+Parsing indexes the claim references in each exact statement PDF. Claim details
+can open a related statement in another claim folder for the same member, checking
+the current selection, hash and freshly extracted references. Tests refuse
+changed or removed files, forged index entries and foreign-member documents.
+Assessment-reason changes count as updates and preserve prior audit notes;
+unchanged reparses stay idempotent and reason changes invalidate old review marks.
+
+All 114 automated tests pass with PDF extraction and FFmpeg source required.
+Source privacy, lint, type and formatting checks pass. Desktop checks include
+opening a related statement through the claim drawer; its screenshot was reviewed.
+The portal and discovery checks use intercepted synthetic responses, including
+session expiry between members and during confirmation. No live Bupa sync was run.
+
 ## Version 0.3.0 — 21 October 2026
 
 Version 0.3.0 promotes the automatic-import and sync-recovery changes from

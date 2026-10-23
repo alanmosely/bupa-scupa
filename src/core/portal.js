@@ -32,8 +32,19 @@ const check = (signal) => {
   if (signal?.aborted)
     throw new ScupaError('CANCELLED', 'Sync cancelled. Downloaded PDFs have been kept.');
 };
+async function checkPageSession(page, request) {
+  validatePortalResponse(
+    {
+      status: 200,
+      url: page.url(),
+      loginPage: (await page.locator('input[type="password"]').count()) > 0,
+    },
+    request,
+  );
+}
 
 async function portalHtml(page, endpoint, request) {
+  await checkPageSession(page, request);
   // Keep a gap between requests, including claim-details calls. First imports
   // can otherwise send hundreds of requests in a burst.
   await pause(250);
@@ -129,6 +140,7 @@ export function uniqueMemberHref(links, name) {
   return hrefs[0];
 }
 async function links(page) {
+  await checkPageSession(page, 'member navigation');
   return page.evaluate(() =>
     [...document.querySelectorAll('a[href]')].map((a) => ({
       href: a.getAttribute('href'),
@@ -422,54 +434,9 @@ export async function fetchHousehold({
     for (const [id, member] of Object.entries(cfg.members)) {
       check(signal);
       emit({ phase: 'member', message: `Checking ${member.displayName}…` });
-      // Discovery ends on the dependants overview, where the claims API may
-      // return an empty response. Open the actual holder's claims page first.
-      if (member.self)
-        await page.goto(ORIGIN + '/my-claims', { waitUntil: 'domcontentloaded', timeout: 30000 });
-      const current = await retry(() => portalList(page));
-      const alreadySelected =
-        byMember[id]?.size && current.some((c) => byMember[id].has(c.claimId));
-      // The account holder is not listed among dependant cards. The query-free
-      // claims route returns to their profile; child links must retain memberid.
-      if (!member.self && !alreadySelected) await selectMember(page, member);
-      const all = await retry(() => portalList(page));
-      const known = verifyMemberRefs(
-        id,
-        all.map((c) => c.claimId),
-        byMember,
-      );
-      if (!known || member.needsConfirmation) {
-        if (!confirmMember)
-          throw new ScupaError(
-            'HUMAN_ACTION_REQUIRED',
-            'Confirm the selected member in the desktop app before the first import.',
-          );
-        const accepted = await confirmMember({
-          memberId: id,
-          displayName: member.displayName,
-          claimCount: all.length,
-        });
-        check(signal);
-        if (!accepted) throw new ScupaError('CANCELLED', 'Member verification was cancelled.');
-        // Check the snapshot again in case the user changed profiles while reviewing it.
-        const after = await portalList(page);
-        if (JSON.stringify(after) !== JSON.stringify(all))
-          throw new ScupaError(
-            'PROFILE_CHANGED',
-            'The claims list changed during confirmation. Start again.',
-          );
-        verifyMemberRefs(
-          id,
-          after.map((c) => c.claimId),
-          byMember,
-        );
-        if (member.needsConfirmation) {
-          delete member.needsConfirmation;
-          saveConfig(cfg);
-        }
-      }
-      byMember[id] = new Set(all.map((c) => c.claimId));
-      const request = async (operation, claimId) => {
+      // Selection, verification and confirmation can expire just like downloads.
+      // Always restore and verify this member before retrying any operation.
+      const request = async (operation, claimId = null) => {
         const attempt = () =>
           retry(operation, {
             attempts: 4,
@@ -501,7 +468,7 @@ export async function fetchHousehold({
             resumed.map((c) => c.claimId),
             byMember,
           );
-          if (!resumed.some((c) => c.claimId === claimId))
+          if (claimId && !resumed.some((c) => c.claimId === claimId))
             throw new ScupaError(
               'PROFILE_CHANGED',
               'The claim is no longer listed after signing in again. Start sync again. Downloaded PDFs have been kept.',
@@ -510,6 +477,53 @@ export async function fetchHousehold({
           return await attempt();
         }
       };
+      // Discovery ends on the dependants overview, where the claims API may
+      // return an empty response. Open the actual holder's claims page first.
+      if (member.self)
+        await page.goto(ORIGIN + '/my-claims', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      const current = await request(() => portalList(page));
+      const alreadySelected =
+        byMember[id]?.size && current.some((c) => byMember[id].has(c.claimId));
+      // The account holder is not listed among dependant cards. The query-free
+      // claims route returns to their profile; child links must retain memberid.
+      if (!member.self && !alreadySelected) await request(() => selectMember(page, member));
+      const all = await request(() => portalList(page));
+      const known = verifyMemberRefs(
+        id,
+        all.map((c) => c.claimId),
+        byMember,
+      );
+      if (!known || member.needsConfirmation) {
+        if (!confirmMember)
+          throw new ScupaError(
+            'HUMAN_ACTION_REQUIRED',
+            'Confirm the selected member in the desktop app before the first import.',
+          );
+        const accepted = await confirmMember({
+          memberId: id,
+          displayName: member.displayName,
+          claimCount: all.length,
+        });
+        check(signal);
+        if (!accepted) throw new ScupaError('CANCELLED', 'Member verification was cancelled.');
+        // Check the snapshot again in case the user changed profiles while reviewing it.
+        const after = await request(() => portalList(page));
+        if (JSON.stringify(after) !== JSON.stringify(all))
+          throw new ScupaError(
+            'PROFILE_CHANGED',
+            'The claims list changed during confirmation. Start again.',
+          );
+        verifyMemberRefs(
+          id,
+          after.map((c) => c.claimId),
+          byMember,
+        );
+        if (member.needsConfirmation) {
+          delete member.needsConfirmation;
+          saveConfig(cfg);
+        }
+      }
+      byMember[id] = new Set(all.map((c) => c.claimId));
       const since = fullRefresh ? '000000' : sinceFromRef(latest[id], 14);
       const selected = selectClaims(all, since, stubs[id], fullRefresh);
       /** @type {{member: string, since: string, exportedAt: string, claims: Array<{claimId: string, recievedDate: string, files: string[]}>}} */

@@ -23,7 +23,10 @@ fs.mkdirSync(raw, { recursive: true });
 fs.writeFileSync(path.join(raw, 'statement_1_demo.pdf'), syntheticPdf(statement()));
 approveAssessment(raw, 'statement_1_demo.pdf');
 const portable = process.argv.includes('--portable');
-const exe = path.resolve(portable ? 'dist/bupa-scupa-x64.exe' : 'dist/win-unpacked/BUPA SCUPA.exe');
+const exe = path.resolve(
+  process.env.SCUPA_PACKAGE_DIR || 'dist',
+  portable ? 'bupa-scupa-x64.exe' : 'win-unpacked/BUPA SCUPA.exe',
+);
 const ajv = new Ajv({ strict: true });
 const schemas = Object.fromEntries(
   Object.entries(API.schemas.responses).map(([command, value]) => [command, ajv.compile(value)]),

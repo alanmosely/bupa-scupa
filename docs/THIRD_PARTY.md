@@ -1,4 +1,4 @@
-# Bundled component review — 7 October 2026
+# Bundled component review — 23 October 2026
 
 The identified browser, FFmpeg source-delivery and Xpdf build-provenance findings
 are addressed by the current packaging. Keep these checks when updating dependencies.
@@ -7,7 +7,7 @@ This records technical distribution evidence, not a legal opinion.
 | Component                  | Distribution evidence                                                                                               |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | SCUPA                      | GPL-3.0-or-later LICENSE, NOTICE, source ZIP and build recipe                                                       |
-| Electron 44.5.1            | MIT licence and Chromium aggregate notices accompany the runtime                                                    |
+| Electron 44.9.3            | MIT licence and Chromium aggregate notices accompany the runtime                                                    |
 | Electron's FFmpeg          | Matching source, Electron patches, Opus source, build materials, LGPL text and DLL provenance in `resources/ffmpeg` |
 | Playwright 1.63.0          | Apache LICENSE, NOTICE, ThirdPartyNotices.txt and dependency licences retained in app.asar                          |
 | Installed Edge/Chrome      | Launched through supported Playwright channels; no sync browser is distributed                                      |
@@ -16,7 +16,7 @@ This records technical distribution evidence, not a legal opinion.
 
 ## Electron and FFmpeg
 
-Electron 44.5.1 pins Chromium 152.0.7977.130, whose DEPS pins FFmpeg revision
+Electron 44.9.3 pins Chromium 152.0.7977.167, whose DEPS pins FFmpeg revision
 `2b68d2babae73714846961fb0ee47e3b3d2e39a9`. The installed DLL was compared with
 Electron's official Windows x64 ZIP after verifying that ZIP against the official
 release checksum manifest. Both contain the same DLL, recorded in `vendor-lock.json`.
@@ -39,7 +39,15 @@ has not been rebuilt locally, and byte-for-byte reproducibility is not claimed.
 The build guide requires the upstream dependency checkout and Windows toolchain;
 the delivered component sources are not a complete offline Electron SDK.
 The approach follows [FFmpeg's source and dynamic-linking guidance](https://ffmpeg.org/legal.html)
-and the [pinned Electron release settings](https://github.com/electron/electron/blob/v44.5.1/build/args/release.gn).
+and the [pinned Electron release settings](https://github.com/electron/electron/blob/v44.9.3/build/args/release.gn).
+
+Electron was updated for [GHSA-jr5w-w6x2-84p9](https://github.com/advisories/GHSA-jr5w-w6x2-84p9).
+The new tagged DEPS, ordinary release arguments and official Windows x64 checksum
+manifest were reviewed. FFmpeg and NASM revisions, FFmpeg patches, Opus contents
+and Chromium FFmpeg build materials are unchanged. Chromium's dependency manifest
+and Electron's complete tagged source are refreshed for the new runtime. The
+FFmpeg DLL matches the verified official archive; its source pairing is checked
+again during packaging. The dependency audit reports no known vulnerabilities.
 
 ## Browser dependency
 

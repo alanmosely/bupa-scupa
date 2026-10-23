@@ -52,6 +52,10 @@ For version 0.3.0, the maintainer explicitly authorised a stable release on
 outstanding. Record that limitation in the release notes and validation evidence;
 the remaining automated, packaging and publication checks still apply.
 
+The maintainer also authorised stable version 0.3.1 on 23 October 2026 with the
+same live-acceptance limitation disclosed. Keep that limitation in its notes;
+all automated, packaging and publication checks remain required.
+
 ## Publish
 
 Tag the reviewed commit in [bupa-scupa](https://github.com/alanmosely/bupa-scupa).
