@@ -59,6 +59,14 @@ is independent of Bupa; avoid using its logos or suggesting endorsement.
 `npm run release:source` creates the reviewed source archive. See
 [the release checklist](docs/RELEASE.md) before distributing either.
 
+The build runs `npm run prepare:portable` before packaging. This verifies the
+pinned builder's portable template and adds explicit temporary-directory
+initialisation during silent startup. An unavailable directory stops the launcher
+before extraction. Direct NSIS file extraction avoids the 7z-plugin path; each
+launch keeps its own runtime folder. Unexpected template contents stop the build
+and require review before updating the pin. The concurrency smoke observes two
+separate runtime folders and requires three consecutive successful launch pairs.
+
 Release builds also require PowerShell 7 and Visual Studio 2022 C++ Build Tools
 with CMake and Ninja. `npm run build:pdf` compiles the pinned Xpdf source after
 vendoring; the full build runs it automatically. The Windows SDK is hash-checked

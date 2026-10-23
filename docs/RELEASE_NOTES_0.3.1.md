@@ -50,9 +50,11 @@ Two hosted concurrent-launch checks failed before producing agent responses,
 one with Windows code 0xC0000094 and one with exit code 1. Additional local
 repetitions and a four-command stress check on two CPU cores passed. Portable
 packaging now uses electron-builder's direct NSIS file extraction instead of its
-7z-plugin extraction path, while retaining a separate runtime for each launch.
+7z-plugin extraction path, with an explicitly initialised private runtime for each silent launch. A
+hash-checked build preparation refuses unexpected upstream template contents and
+stops the launcher if that directory is unavailable.
 The concurrency gate requires three consecutive pairs with fresh archives and
-output files and runs immediately after the build. CI records matching Windows
+output files and observes two separate runtime folders for each pair and runs immediately after the build. CI records matching Windows
 crash events on failure; a complete hosted run is required before publication.
 
 The binaries are unsigned. Fresh-machine testing and a fresh live end-to-end

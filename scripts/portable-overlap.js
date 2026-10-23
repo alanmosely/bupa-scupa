@@ -3,10 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { setInterval, clearInterval } from 'node:timers';
 
 fs.mkdirSync('.cache/portable-overlap', { recursive: true });
 const root = fs.mkdtempSync(path.resolve('.cache/portable-overlap/run-'));
 const exe = path.resolve('dist/bupa-scupa-x64.exe');
+const temp = path.join(root, 'temp');
+fs.mkdirSync(temp);
 async function launch(command, index) {
   const output = path.join(root, `response-${index}.json`);
   const child = spawn(
@@ -16,6 +19,8 @@ async function launch(command, index) {
       env: {
         ...process.env,
         PATH: path.join(process.env.SystemRoot, 'System32'),
+        TEMP: temp,
+        TMP: temp,
         SCUPA_APP_DIR: path.join(root, `preferences-${index}`),
       },
       windowsHide: true,
@@ -64,12 +69,31 @@ async function launch(command, index) {
 // Every pair must pass. Use fresh output/archive paths for each pair so an
 // earlier result cannot hide a missing response from a later invocation.
 for (let round = 0; round < 3; round++) {
-  const results = await Promise.allSettled([
-    launch('schema', round * 2 + 1),
-    launch('status', round * 2 + 2),
-  ]);
-  for (const result of results) if (result.status === 'rejected') throw result.reason;
+  const existing = new Set(fs.readdirSync(temp).map((name) => path.join(temp, name, 'app')));
+  const runtimes = new Set();
+  const observe = () => {
+    for (const entry of fs.readdirSync(temp, { withFileTypes: true })) {
+      const runtime = path.join(temp, entry.name, 'app');
+      if (!existing.has(runtime) && entry.isDirectory() && fs.existsSync(runtime))
+        runtimes.add(runtime);
+    }
+  };
+  const monitor = setInterval(observe, 25);
+  try {
+    const results = await Promise.allSettled([
+      launch('schema', round * 2 + 1),
+      launch('status', round * 2 + 2),
+    ]);
+    for (const result of results) if (result.status === 'rejected') throw result.reason;
+    assert.equal(
+      runtimes.size,
+      2,
+      'Concurrent launches each extracted into their own temporary runtime',
+    );
+  } finally {
+    clearInterval(monitor);
+  }
 }
 console.log(
-  'Three consecutive pairs of concurrent portable agent invocations passed with isolated empty archives and system-only PATH. No login or real records.',
+  'Three consecutive pairs of concurrent portable agent invocations passed with separate observed runtime folders, isolated empty archives and system-only PATH. No login or real records.',
 );

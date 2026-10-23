@@ -21,13 +21,14 @@
     "icon": "node scripts/icon.js",
     "test:desktop": "node scripts/smoke.js && node scripts/claims-smoke.js",
     "test:portal": "node scripts/portal-smoke.js && node scripts/discovery-smoke.js",
-    "build": "npm run check && npm run vendor && npm run build:pdf && npm run icon && npm test && electron-builder --win portable zip --x64 --publish never",
+    "build": "npm run check && npm run vendor && npm run build:pdf && npm run icon && npm run prepare:portable && npm test && electron-builder --win portable zip --x64 --publish never",
     "release:source": "node scripts/source-release.js",
     "format": "prettier --write \"src/**/*.{js,cjs,ts,html,css}\" \"scripts/**/*.js\" \"test/**/*.js\" \"docs/**/*.md\" \"*.{md,json,js}\" \".github/**/*.{yml,yaml}\"",
     "format:check": "prettier --check \"src/**/*.{js,cjs,ts,html,css}\" \"scripts/**/*.js\" \"test/**/*.js\" \"docs/**/*.md\" \"*.{md,json,js}\" \".github/**/*.{yml,yaml}\"",
     "lint": "eslint src scripts test eslint.config.js",
     "typecheck": "tsc --project tsconfig.json",
-    "release:check": "node scripts/release-check.js"
+    "release:check": "node scripts/release-check.js",
+    "prepare:portable": "node scripts/portable-template.js"
   },
   "dependencies": {
     "playwright-core": "1.63.0"
