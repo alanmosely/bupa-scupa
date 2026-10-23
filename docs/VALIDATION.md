@@ -10,16 +10,12 @@ OS build 26300, including the related-statement link in claim details; its
 synthetic screenshot was reviewed. Packaged, portable-agent, synthetic portal
 and exact artifact checks remain required before publication.
 
-Two hosted concurrent-launch checks failed before producing agent responses,
-one with Windows code 0xC0000094 and one with exit code 1. Additional local
-repetitions and a four-command stress check on two CPU cores passed. Portable
-packaging now uses electron-builder's direct NSIS file extraction instead of its
-7z-plugin extraction path, with an explicitly initialised private runtime for each silent launch. A
-hash-checked build preparation refuses unexpected upstream template contents and
-stops the launcher if that directory is unavailable.
-The concurrency gate requires three consecutive pairs with fresh archives and
-output files and observes two separate runtime folders for each pair and runs immediately after the build. CI records matching Windows
-crash events on failure; a complete hosted run is required before publication.
+Fast agent commands could exit during Electron's native startup and crash,
+sometimes after writing a valid response. Startup now yields to the main message
+loop before handling commands, preserving their intended exit codes. This matches
+[Electron issue #55011](https://github.com/electron/electron/issues/55011).
+The startup smoke checks 128 concurrent successful and invalid-command exits;
+portable checks require three launch pairs with separate observed runtime folders.
 
 A fresh dependency audit identified GHSA-jr5w-w6x2-84p9 in the previous Electron
 version. Electron is pinned to 44.9.3 and its audit is clear. Its official Windows

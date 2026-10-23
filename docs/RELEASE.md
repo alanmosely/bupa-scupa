@@ -21,6 +21,7 @@ outstanding acceptance checks are recorded in [VALIDATION.md](VALIDATION.md).
    npm run test:desktop
    npm run test:portal
    npm run build
+   npm run test:startup
    node scripts/smoke.js --packaged --browser --cancel-parse
    node scripts/agent-smoke.js
    node scripts/agent-smoke.js --portable

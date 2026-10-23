@@ -33,6 +33,7 @@ jobs:
         env:
           SCUPA_REQUIRE_PDF_TESTS: '1'
           SCUPA_REQUIRE_FFMPEG_SOURCE: '1'
+      - run: npm run test:startup
       - run: node scripts/portable-overlap.js
       - run: npm run test:desktop
       - run: npm run test:portal
