@@ -44,7 +44,9 @@ desktop and synthetic portal/discovery workflows, packaged and portable agent
 commands, cancellation, source privacy and exact release artifact checks.
 Electron is updated to 44.9.3 for
 [GHSA-jr5w-w6x2-84p9](https://github.com/advisories/GHSA-jr5w-w6x2-84p9),
-with matching FFmpeg source and binary provenance. The dependency audit is clear.
+with matching FFmpeg source and binary provenance. The lockfile also updates
+fast-uri and undici to patched build/test dependency versions. The dependency
+audit is clear.
 
 Two hosted concurrent-launch checks failed before producing agent responses,
 one with Windows code 0xC0000094 and one with exit code 1. Additional local

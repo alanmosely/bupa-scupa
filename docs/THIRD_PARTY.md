@@ -49,6 +49,12 @@ and Electron's complete tagged source are refreshed for the new runtime. The
 FFmpeg DLL matches the verified official archive; its source pairing is checked
 again during packaging. The dependency audit reports no known vulnerabilities.
 
+The lockfile also updates MIT-licensed build/test dependencies to fast-uri 3.1.9
+and undici 6.29.1/7.30.1 for newly reported advisories. See the
+[fast-uri advisory](https://github.com/advisories/GHSA-w74x-v6f9-j3xg) and
+[undici advisory](https://github.com/advisories/GHSA-4qv8-2p9j-2685).
+These retain their package licences; the complete dependency audit is clear.
+
 ## Browser dependency
 
 Sync uses installed Edge, falling back to Chrome, through

@@ -28,6 +28,10 @@ Chromium 152.0.7977.167 materials, patches and notices are included. The FFmpeg,
 Opus and NASM source contents and codec settings are unchanged, and Electron's
 FFmpeg patch applies to the supplied source. See [THIRD_PARTY.md](THIRD_PARTY.md).
 
+The final lockfile updates fast-uri to 3.1.9 and undici to 6.29.1/7.30.1 after
+CI reported new advisories during release preparation. These are build/test
+dependencies with their existing MIT licences; the dependency audit is clear.
+
 The maintainer authorised stable publication with the existing live-acceptance
 limitation disclosed. No fresh packaged live household sync or fresh-machine
 check was performed. The binaries remain unsigned.
