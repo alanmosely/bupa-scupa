@@ -94,7 +94,8 @@
     "portable": {
       "artifactName": "bupa-scupa-x64.exe",
       "requestExecutionLevel": "user",
-      "unpackDirName": true
+      "unpackDirName": true,
+      "useZip": true
     },
     "electronLanguages": [
       "en-GB",

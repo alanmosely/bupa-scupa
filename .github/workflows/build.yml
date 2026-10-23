@@ -33,12 +33,12 @@ jobs:
         env:
           SCUPA_REQUIRE_PDF_TESTS: '1'
           SCUPA_REQUIRE_FFMPEG_SOURCE: '1'
+      - run: node scripts/portable-overlap.js
       - run: npm run test:desktop
       - run: npm run test:portal
       - run: node scripts/smoke.js --packaged --browser --cancel-parse
       - run: node scripts/agent-smoke.js
       - run: node scripts/agent-smoke.js --portable
-      - run: node scripts/portable-overlap.js
       - run: node scripts/agent-cancel-smoke.js
       - name: Native launch failure diagnostics
         if: failure()
