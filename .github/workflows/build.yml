@@ -33,13 +33,22 @@ jobs:
         env:
           SCUPA_REQUIRE_PDF_TESTS: '1'
           SCUPA_REQUIRE_FFMPEG_SOURCE: '1'
+      - run: npm run test:startup
+      - run: node scripts/portable-overlap.js
       - run: npm run test:desktop
       - run: npm run test:portal
       - run: node scripts/smoke.js --packaged --browser --cancel-parse
       - run: node scripts/agent-smoke.js
       - run: node scripts/agent-smoke.js --portable
-      - run: node scripts/portable-overlap.js
       - run: node scripts/agent-cancel-smoke.js
+      - name: Native launch failure diagnostics
+        if: failure()
+        shell: pwsh
+        run: |
+          $crashes = Get-WinEvent -FilterHashtable @{ LogName='Application'; Id=1000,1001; StartTime=(Get-Date).AddMinutes(-30) } -ErrorAction SilentlyContinue
+          $matching = @($crashes | Where-Object { $_.Message -match 'BUPA SCUPA|bupa-scupa|electron|nsis' })
+          if ($matching.Count) { $matching | ForEach-Object { $_.Message } }
+          else { Write-Output 'No matching Windows native crash events were recorded.' }
       - run: npm run release:source
       - run: npm run release:check
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
