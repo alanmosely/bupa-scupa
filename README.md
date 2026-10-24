@@ -56,6 +56,22 @@ Version-specific downloads:
 [source](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.1/bupa-scupa-0.3.1-source.zip),
 and [checksums](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.1/SHA256SUMS.txt).
 
+## Updating an existing archive
+
+1. Back up your **entire archive folder**, including its PDFs, claim history and
+   personal follow-up notes.
+2. Close SCUPA, download the latest release and replace the old application. For
+   the ZIP, extract the complete application into a new folder.
+3. Open the updated app with your existing archive, then choose
+   **Archive options → Recheck saved PDFs**.
+
+Rechecking applies the parsing fixes to saved statements, refreshes assessment
+reasons and builds links to related statements saved under another claim. It
+works offline and needs no Bupa login or new downloads. Your saved PDFs and
+personal follow-up notes are preserved. Use **View changes** after the recheck
+to see any corrected records. Claims with no saved assessment statement still
+need a future sync to check for one.
+
 ## Agents and scripts
 
 Agents can query claims and payment totals through the [local JSON API](AGENT_API.md).
