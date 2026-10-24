@@ -52,6 +52,18 @@ const nearly = (a, b) => {
 };
 
 const appendNote = (existing, note) => (existing ? `${existing} | ${note}` : note);
+function assessmentNotes(notes = '') {
+  // Keep the CSV schema and existing audit history. A JSON string lets new
+  // reasons contain separators, quotes or previous audit wording unambiguously.
+  const revisions = [
+    ...notes.matchAll(
+      /(?:^| \| )assessment notes \d{4}-\d{2}-\d{2}: ("(?:[^"\\]|\\.)*")(?= \| |$)/g,
+    ),
+  ];
+  const latest = revisions.at(-1);
+  if (latest) return JSON.parse(latest[1]);
+  return notes.split(/(?:^| \| )(?:reassessed|statement arrived) \d{4}-\d{2}-\d{2}\b/)[0];
+}
 const validAmount = (value) =>
   typeof value === 'string' && /^-?\d+(?:\.\d+)?$/.test(value) && Number.isFinite(Number(value));
 
@@ -167,12 +179,26 @@ export function mergeRecords(
         diffs.push({ field: f, from: existing[f], to: rec[f] });
       }
     }
+    const previousNotes = assessmentNotes(existing.notes);
+    const nextNotes = rec.notes ?? '';
+    if (previousNotes !== nextNotes)
+      diffs.push({ field: 'notes', from: previousNotes, to: nextNotes });
     if (diffs.length) {
-      for (const d of diffs) existing[d.field] = rec[d.field];
+      for (const d of diffs) if (d.field !== 'notes') existing[d.field] = rec[d.field];
       existing.notes = appendNote(
         existing.notes,
-        `reassessed ${todayIso()}: ${diffs.map((d) => `${d.field} ${d.from || '(empty)'}→${d.to}`).join(', ')}`,
+        `reassessed ${todayIso()}: ${
+          diffs
+            .filter((d) => d.field !== 'notes')
+            .map((d) => `${d.field} ${d.from || '(empty)'}→${d.to}`)
+            .join(', ') || 'assessment notes changed'
+        }`,
       );
+      if (previousNotes !== nextNotes)
+        existing.notes = appendNote(
+          existing.notes,
+          `assessment notes ${todayIso()}: ${JSON.stringify(nextNotes)}`,
+        );
       updated.push({ rec, diffs });
     }
   }

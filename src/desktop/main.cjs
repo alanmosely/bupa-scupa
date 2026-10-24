@@ -142,6 +142,9 @@ function assertSender(event) {
 app
   .whenReady()
   .then(async () => {
+    // ready precedes the native main loop. Fast agent commands must not call
+    // app.exit while Chromium's startup threads are still being initialised.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const { parseArgs, execute, envelope, exitCode, writeResult, createAgentSession } =
       await import('../agent.js');
     finishAgent = (result, error) => {

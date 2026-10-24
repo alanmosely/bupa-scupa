@@ -33,7 +33,7 @@ The source archives contain:
   Electron's official release checksum manifest.
 
 The `checkout` fields in `PROVENANCE.json` identify where each input belongs in
-an upstream checkout. Electron's tarball has an `electron-44.5.1/` enclosing
+an upstream checkout. Electron's tarball has an `electron-44.9.3/` enclosing
 directory; the Chromium and FFmpeg tarballs have no enclosing directory.
 Preserve every archive and its notices when redistributing the app. Sources
 travel inside both the portable EXE and the extracted-app ZIP, so they are
@@ -60,10 +60,10 @@ instructions are in the Electron archive at
 
    ```powershell
    gclient config --name "src/electron" --unmanaged https://github.com/electron/electron
-   gclient sync --revision src/electron@v44.5.1 --with_branch_heads --with_tags
+   gclient sync --revision src/electron@v44.9.3 --with_branch_heads --with_tags
    ```
 
-   This resolves Chromium 152.0.7977.130 and FFmpeg revision
+   This resolves Chromium 152.0.7977.167 and FFmpeg revision
    `2b68d2babae73714846961fb0ee47e3b3d2e39a9` from the included DEPS manifests.
    Electron's hooks apply `patches/config.json`, including the FFmpeg patch series.
    The sole FFmpeg patch changes a macOS install name; retain it even for a Windows

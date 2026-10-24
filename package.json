@@ -1,7 +1,7 @@
 {
   "name": "bupa-scupa",
   "productName": "BUPA SCUPA",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "BUPA Simple Claims Utility & Personal Archive. An independent, local-first family claims companion.",
   "license": "GPL-3.0-or-later",
   "author": "BUPA SCUPA contributors",
@@ -27,7 +27,8 @@
     "format:check": "prettier --check \"src/**/*.{js,cjs,ts,html,css}\" \"scripts/**/*.js\" \"test/**/*.js\" \"docs/**/*.md\" \"*.{md,json,js}\" \".github/**/*.{yml,yaml}\"",
     "lint": "eslint src scripts test eslint.config.js",
     "typecheck": "tsc --project tsconfig.json",
-    "release:check": "node scripts/release-check.js"
+    "release:check": "node scripts/release-check.js",
+    "test:startup": "node scripts/agent-startup-smoke.js"
   },
   "dependencies": {
     "playwright-core": "1.63.0"
@@ -37,7 +38,7 @@
     "@eslint/js": "10.0.1",
     "@types/node": "24.19.1",
     "ajv": "8.20.0",
-    "electron": "44.5.1",
+    "electron": "44.9.3",
     "electron-builder": "26.15.3",
     "eslint": "10.12.0",
     "prettier": "3.9.9",

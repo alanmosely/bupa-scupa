@@ -364,29 +364,60 @@ function knownClaim(claimRef) {
     throw new ScupaError('INVALID_INPUT', 'Choose a claim in this archive.');
   return row;
 }
+function relatedStatementDocuments(row) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(DATA, 'parsed.json'), 'utf8'));
+    return (Array.isArray(parsed.documents) ? parsed.documents : []).filter(
+      (document) =>
+        document &&
+        typeof document.file === 'string' &&
+        document.file.startsWith(`${row.member}/`) &&
+        !document.file.startsWith(`${row.member}/${row.claim_ref}/`) &&
+        Array.isArray(document.claimRefs) &&
+        document.claimRefs.includes(row.claim_ref) &&
+        typeof document.sha256 === 'string',
+    );
+  } catch {
+    // Older diagnostics have no cross-claim index until saved PDFs are rechecked.
+    return [];
+  }
+}
 export function claimDetails({ claimRef }) {
   const row = knownClaim(claimRef);
   const directory = path.join(RAW, row.member, claimRef);
   const documents = [];
   let documentError = '';
+  const files = new Map();
   try {
     if (fs.existsSync(directory)) {
       if (fs.lstatSync(directory).isSymbolicLink())
         throw new Error('Linked archive documents are not supported.');
       for (const name of currentClaimFiles(directory)) {
         const file = `${row.member}/${claimRef}/${name}`;
-        const absolute = resolveClaimPdf(file);
-        validatePdf(fs.readFileSync(absolute));
-        documents.push({
-          file,
-          name,
-          sha256: documentHash(absolute),
-          kind: /^supporting_/i.test(name) ? 'Supporting document' : 'Statement document',
-        });
+        files.set(file, documentHash(resolveClaimPdf(file)));
       }
     }
   } catch (error) {
     documentError = error.message;
+  }
+  for (const document of relatedStatementDocuments(row)) files.set(document.file, document.sha256);
+  for (const [file, sha256] of files) {
+    try {
+      claimDocumentPath({ claimRef, file, sha256 });
+      const name = file.split('/')[2];
+      documents.push({
+        file,
+        name,
+        sha256,
+        kind: !file.startsWith(`${row.member}/${claimRef}/`)
+          ? 'Related statement document'
+          : /^supporting_/i.test(name)
+            ? 'Supporting document'
+            : 'Statement document',
+      });
+    } catch (error) {
+      documentError = error.message;
+    }
   }
   const followUp = loadWorkspace().followUps[claimRef] || emptyFollowUp();
   return {
@@ -402,12 +433,27 @@ export function claimDetails({ claimRef }) {
 }
 export function claimDocumentPath({ claimRef, file, sha256 }) {
   const row = knownClaim(claimRef);
-  if (typeof file !== 'string' || !file.startsWith(`${row.member}/${claimRef}/`))
+  const ownFolder = typeof file === 'string' && file.startsWith(`${row.member}/${claimRef}/`);
+  const related =
+    !ownFolder &&
+    relatedStatementDocuments(row).some(
+      (document) => document.file === file && document.sha256 === sha256,
+    );
+  if (!ownFolder && !related)
     throw new ScupaError('INVALID_INPUT', 'Choose a document belonging to this claim.');
-  const absolute = resolveClaimPdf(file);
+  const absolute = ownFolder ? resolveClaimPdf(file) : resolveDocument(file);
   if (typeof sha256 !== 'string' || documentHash(absolute) !== sha256)
     throw new ScupaError('INVALID_INPUT', 'The PDF has changed. Reopen the claim details.');
   validatePdf(fs.readFileSync(absolute));
+  // The diagnostic index is only a hint. Re-extract the unchanged current PDF
+  // before allowing a cross-folder link, so edited metadata cannot invent one.
+  if (
+    related &&
+    !parseStatementText(pdfToText(process.env.SCUPA_PDFTOTEXT, absolute), row.member).some(
+      (record) => record.claim_ref === claimRef,
+    )
+  )
+    throw new ScupaError('INVALID_INPUT', 'Choose a document belonging to this claim.');
   return absolute;
 }
 /** Caller holds the archive lock. */

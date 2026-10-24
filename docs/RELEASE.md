@@ -21,6 +21,7 @@ outstanding acceptance checks are recorded in [VALIDATION.md](VALIDATION.md).
    npm run test:desktop
    npm run test:portal
    npm run build
+   npm run test:startup
    node scripts/smoke.js --packaged --browser --cancel-parse
    node scripts/agent-smoke.js
    node scripts/agent-smoke.js --portable
@@ -51,6 +52,10 @@ For version 0.3.0, the maintainer explicitly authorised a stable release on
 21 October 2026 with the fresh packaged live-sync acceptance check still
 outstanding. Record that limitation in the release notes and validation evidence;
 the remaining automated, packaging and publication checks still apply.
+
+The maintainer also authorised stable version 0.3.1 on 23 October 2026 with the
+same live-acceptance limitation disclosed. Keep that limitation in its notes;
+all automated, packaging and publication checks remain required.
 
 ## Publish
 

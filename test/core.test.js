@@ -36,6 +36,7 @@ const {
   archiveHelp,
 } = await import('../src/core/service.js');
 const { parseCsv, toCsv } = await import('../src/core/csv.js');
+const { queryClaims, emptyFollowUp } = await import('../src/core/claims.js');
 const { uniqueMemberHref, selectClaims, downloadPdf } = await import('../src/core/portal.js');
 const { downloadProgress } = await import('../src/core/download-progress.js');
 const pdfAvailable = fs.existsSync('vendor/xpdf/pdftotext.exe');
@@ -169,6 +170,149 @@ test('authoritative totals and partial payment', () => {
   assert.equal(r.status, 'Partially Paid');
   assert.equal(r.payment_date, '2000-01-02');
 });
+
+test('labelled tax/discount columns use the final invoice amount without hiding genuine shortfalls', () => {
+  const table = (gross, net, paid = net) =>
+    statement({ claimed: gross, paid }).replace(
+      `01/01/2000    Specialist consultation    £${gross}    £${paid}`,
+      `Amount excl.\nTreatment date    Benefit or deduction    tax/discount    Amount (GBP)\n(GBP)\n01/01/2000    Specialist consultation    ${gross}    ${net}`,
+    );
+  for (const [gross, net] of [
+    ['125.00', '76.00'],
+    ['60.00', '35.00'],
+    ['40.26', '42.32'],
+  ]) {
+    const r = parseStatementText(table(gross, net), 'test_member')[0];
+    assert.deepEqual(r.errors, []);
+    assert.equal(Number(r.claimed), Number(net));
+    assert.equal(r.status, 'Paid in Full');
+    assert.match(r.notes, /before tax\/discount/);
+  }
+  const partial = parseStatementText(table('125.00', '110.00', '90.00'), 'test_member')[0];
+  assert.equal(partial.claimed, '110.0');
+  assert.equal(partial.paid, '90.0');
+  assert.equal(partial.status, 'Partially Paid');
+  assert.ok(
+    parseStatementText(
+      table('125.00', '110.00').replace('125.00    110.00', '110.00'),
+      'test_member',
+    )[0].errors.length,
+  );
+  assert.equal(record().status, 'Partially Paid', 'Unlabelled columns cannot prove a discount');
+});
+
+test('distinct invoice blocks retain their own totals and exclude already assessed duplicates from a new shortfall', () => {
+  const original = statement({ claimed: '200.00', paid: '200.00' });
+  const duplicate = `\nFor treatment at Example Clinic (provider invoice DEMO-2)\n01/01/2000    Non Payable Item    £50.00\nWe won't pay this cost because we've\nreviewed it before.\nTotal payment made to you    £0.00`;
+  const r = parseStatementText(original + duplicate, 'test_member')[0];
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.paid, '200.0');
+  assert.equal(r.claimed, '200.0');
+  assert.equal(r.status, 'Paid in Full');
+  assert.equal(r.invoice, 'DEMO-1; DEMO-2');
+  assert.match(r.notes, /DEMO-2: Duplicate/);
+  const allDuplicate = parseStatementText(
+    original
+      .replace(/£200.00/g, '£50.00')
+      .replace(
+        'Total payment made to you    £50.00',
+        "We won't pay this cost because we've reviewed it before.\nTotal payment made to you    £0.00",
+      ) + duplicate,
+    'test_member',
+  )[0];
+  assert.deepEqual(allDuplicate.errors, []);
+  assert.equal(allDuplicate.paid, '0.0');
+  assert.equal(allDuplicate.claimed, '100.0');
+  assert.match(allDuplicate.status, /^Duplicate/);
+  for (const bad of [
+    duplicate.replace('DEMO-2', 'DEMO-1'),
+    duplicate.replace('to you', 'to your healthcare provider'),
+    duplicate.replace(/Total payment[^\n]+/, ''),
+    duplicate.replaceAll('£', '€'),
+    '\nTotal payment made to you    £50.00',
+  ])
+    assert.ok(parseStatementText(original + bad, 'test_member')[0].errors.length, bad);
+  const rejected = duplicate.replace(
+    "We won't pay this cost because we've\nreviewed it before.",
+    'We cannot pay because a referral is missing.',
+  );
+  assert.equal(parseStatementText(original + rejected, 'test_member')[0].status, 'Partially Paid');
+  const cancelled = original
+    .replaceAll('£200.00', '£50.00')
+    .replace(
+      'Total payment made to you    £50.00',
+      'Please be advised that your claim has been cancelled / rejected as per your request.\nTotal payment made to you    £0.00',
+    );
+  const zero = parseStatementText(cancelled + duplicate, 'test_member')[0];
+  assert.equal(zero.claimed, '100.0');
+  assert.equal(
+    zero.status,
+    'Rejected',
+    'Cancellation without a proven replacement still needs review',
+  );
+  assert.match(zero.notes, /cancelled/);
+});
+
+test('wrapped provider names and a single shared payment date survive multi-claim statements', () => {
+  const text =
+    (statement() + '\n' + statement({ ref: OTHER }))
+      .replaceAll('Payment date: 02/01/2000\n', '')
+      .replaceAll('For treatment at Example Clinic', 'For treatment at Example\nClinic') +
+    '\nPayment date    02/01/2000';
+  const records = parseStatementText(text, 'test_member');
+  assert.ok(
+    records.every((r) => r.provider === 'Example Clinic' && r.payment_date === '2000-01-02'),
+  );
+});
+test('corrected paid assessments clear automatic flags while partial, rejected, pending and personal follow-ups remain', () => {
+  const paid = record({ paid: '100.00' });
+  const partial = { ...record(), claim_ref: OTHER };
+  const rejected = { ...record({ paid: '0.00' }), claim_ref: 'CL000101000003' };
+  const awaiting = {
+    ...paid,
+    claim_ref: 'CL000101000004',
+    status: 'No statement in portal (unassessed?)',
+    claimed: '',
+    paid: '',
+  };
+  const rows = [paid, partial, rejected, awaiting];
+  assert.deepEqual(
+    queryClaims(rows, { view: 'attention' })
+      .map((row) => row.claim_ref)
+      .sort(),
+    [partial.claim_ref, rejected.claim_ref, awaiting.claim_ref],
+  );
+  for (const followUp of [{ pinned: true }, { followUpOn: '2000-01-03' }]) {
+    assert.equal(
+      queryClaims(rows, { view: 'attention' }, { [REF]: { ...emptyFollowUp(), ...followUp } })
+        .length,
+      4,
+    );
+  }
+  assert.equal(queryClaims(rows, { view: 'attention' }, {}, {}, [REF]).length, 4);
+});
+
+test('multiple converted invoice payments must agree with the statement payment currency and total', () => {
+  const first = convertedStatement({ nonPayable: false });
+  const second = first
+    .slice(first.indexOf('For treatment at'), first.indexOf('How we calculate'))
+    .replace('DEMO-1', 'DEMO-2');
+  const combined = first.replace('How we calculate', second + '\nHow we calculate');
+  assert.ok(
+    parseStatementText(combined, 'test_member')[0].errors.some(
+      (e) => e.code === 'INVALID_CONVERSION_TOTAL',
+    ),
+  );
+  const valid = parseStatementText(
+    combined.replace('Payment amount    GBP 64.00', 'Payment amount    GBP 128.00'),
+    'test_member',
+  )[0];
+  assert.deepEqual(valid.errors, []);
+  assert.equal(valid.claimed, '160.0');
+  assert.equal(valid.paid, '128.0');
+  assert.equal(valid.status, 'Paid in Full');
+});
+
 test('full payment, zero rejection and plan-rate exception', () => {
   assert.equal(record({ paid: '100.00' }).status, 'Paid in Full');
   assert.equal(record({ paid: '0.00' }).status, 'Rejected');
@@ -177,10 +321,43 @@ test('full payment, zero rejection and plan-rate exception', () => {
     'Paid at plan rate (member not liable for balance)',
   );
 });
-test('duplicate wording overrides apparent payment', () => {
-  const r = record({ extra: "We won't pay this cost because we've reviewed it before" });
+test('duplicate wording classifies only an assessment with a zero authoritative total', () => {
+  const r = record({
+    paid: '0.00',
+    extra: "We won't pay this cost because we've reviewed it before",
+  });
   assert.equal(r.paid, '0.0');
   assert.match(r.status, /^Duplicate/);
+  const paid = record({ extra: "We won't pay this cost because we've reviewed it before" });
+  assert.equal(paid.paid, '80.0');
+  assert.equal(paid.status, 'Partially Paid');
+});
+
+test('a declined duplicate item never erases other payments in the same claim', () => {
+  const text = statement().replace(
+    'Total payment made',
+    "01/01/2000    Non Payable Item    £50.00\nWe won't pay this cost because we've reviewed it before\nTotal payment made",
+  );
+  const r = parseStatementText(text, 'test_member')[0];
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.claimed, '150.0');
+  assert.equal(r.paid, '80.0');
+  assert.equal(r.status, 'Partially Paid');
+  assert.equal(mergeRecords([r], opts()).rows[0].paid, '80.0');
+  const legacy = opts();
+  mergeRecords([{ ...r, paid: '0.0', status: 'Duplicate - declined (already assessed)' }], legacy);
+  const repaired = mergeRecords([r], legacy);
+  assert.equal(repaired.updated.length, 1);
+  assert.equal(repaired.rows[0].paid, '80.0');
+  assert.equal(repaired.rows[0].status, 'Partially Paid');
+  assert.equal(mergeRecords([r], legacy).updated.length, 0);
+  const converted = parseStatementText(
+    convertedStatement() + "\nWe won't pay this cost because we've reviewed it before",
+    'test_member',
+  )[0];
+  assert.deepEqual(converted.errors, []);
+  assert.equal(converted.paid, '64.0');
+  assert.equal(converted.status, 'Partially Paid');
 });
 test('missing total refuses a master write', () => {
   const r = parseStatementText(statement().replace(/Total payment[^\n]+/, ''), 'test_member')[0];
@@ -493,7 +670,7 @@ test('valid multiple benefit rows retain every amount and category', () => {
   assert.equal(mergeRecords([r], opts()).added.length, 1);
 });
 
-test('ambiguous totals cannot write even when a duplicate overrides payment', () => {
+test('ambiguous totals cannot write even when duplicate wording is present', () => {
   const o = opts();
   for (const text of [
     statement() + '\nTotal payment made to your healthcare provider    £20.00',
@@ -1000,6 +1177,10 @@ test('parser recognises supporting document titles but blocks scans and broken s
     'RECEIPT\nTotal amount received with thanks: £100',
     'Order Details\nOrder Summary\nGrand Total: £100.00',
     'Example Shop\nOrder summary\nTotal £100.00',
+    'Example Health - Clinic Booking Order #DEMO-1\nTotal £100.00',
+    'Your Example order confirmation\nGrand Total £100.00',
+    'Order #DEMO-1 confirmed\nTotal £100.00',
+    'Example Opticians\nReference No: DEMO-1\nItems    Qty    Price    Total\nTotal: £100.00\nVAT Summary',
   ]) {
     const supporting = parseRawDir({
       rawDir: raw,
@@ -1014,6 +1195,8 @@ test('parser recognises supporting document titles but blocks scans and broken s
     'Please upload your invoice for assessment.',
     'Claim statement\nInvoice total £100.00',
     'For Claim\nOrder summary\nTotal £100.00',
+    'Claim statement\nYour Example order confirmation\nTotal £100.00',
+    'Example Opticians\nReference No: DEMO-1\nTotal: £100.00',
     `For Claim ${REF}\nTotal payment made to you £0.00`,
   ]) {
     const broken = parseRawDir({

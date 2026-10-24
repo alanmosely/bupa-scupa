@@ -56,6 +56,8 @@ is independent of Bupa; avoid using its logos or suggesting endorsement.
 ## Build
 
 `npm run build` checks the project and creates portable EXE and ZIP distributions.
+`npm run test:startup` checks concurrent agent startup and exit codes in the
+packaged app (`--development` runs the source version).
 `npm run release:source` creates the reviewed source archive. See
 [the release checklist](docs/RELEASE.md) before distributing either.
 

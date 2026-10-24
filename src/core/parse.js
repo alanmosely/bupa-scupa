@@ -17,9 +17,10 @@ import {
 } from './util.js';
 
 const AMOUNT_CELL = /^-?[£€]?\s?\d[\d,]*\.\d{2}$/;
-const DUP_WORDING = /won't pay this cost because we've reviewed it before/i;
+const DUP_WORDING =
+  /(?:won't pay this cost because we've\s+reviewed it before|we've reviewed this cost\s+before)/i;
 const NOT_LIABLE = /member is not liable to pay for the shortfall/i;
-const REASON_LINE = /unable to pay|won't pay|we cannot pay/i;
+const REASON_LINE = /unable to pay|won't pay|we cannot pay|cancelled\s*\/\s*rejected/i;
 const matchesCurrency = (amount, currency) =>
   (!amount.includes('£') || currency === 'GBP') && (!amount.includes('€') || currency === 'EUR');
 
@@ -162,6 +163,15 @@ function findPaymentDate(text) {
   return m ? ddmmyyyyToIso(m[1]) : '';
 }
 
+function sharedPaymentDate(text) {
+  const dates = [
+    ...text.matchAll(
+      /(?:payment date|date of payment|paid(?: to you)? on)[:\s]*(\d{2}\/\d{2}\/\d{4})/gi,
+    ),
+  ].map((match) => ddmmyyyyToIso(match[1]));
+  return new Set(dates).size === 1 ? dates[0] : '';
+}
+
 export function parseStatementText(rawText, member) {
   const text = normQuotes(rawText);
   const marks = [];
@@ -194,12 +204,111 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
         message: 'current assessment not found after adjustment',
       });
   }
+  // A claim can contain several separately assessed invoices. Split only at
+  // explicit provider/invoice boundaries; repeated totals within one invoice
+  // remain ambiguous and must never be silently added together.
+  const invoiceMarks = [...assessment.matchAll(/For treatment at\s+/gi)];
+  if (invoiceMarks.length > 1) {
+    const invoices = invoiceMarks.map((mark, index) =>
+      parseClaimSegment(
+        assessment.slice(mark.index, invoiceMarks[index + 1]?.index),
+        ref,
+        member,
+        fullText,
+        Math.max(nClaims, 2),
+      ),
+    );
+    const first = invoices[0];
+    const compatible = invoices.every(
+      (invoice) =>
+        invoice.invoice &&
+        invoice.currency === first.currency &&
+        invoice.paid_currency === first.paid_currency &&
+        invoice.paid_to === first.paid_to,
+    );
+    const unique = new Set(invoices.map((invoice) => invoice.invoice)).size === invoices.length;
+    const invoiceErrors = invoices.flatMap((invoice) => invoice.errors);
+    if (
+      /^\s*\d{2}\/\d{2}\/\d{4}\b|Total\s+payment\s+made\s+to/im.test(
+        assessment.slice(0, invoiceMarks[0].index),
+      )
+    )
+      invoiceErrors.push({
+        code: 'AMBIGUOUS_INVOICES',
+        message: 'assessment amounts precede the first invoice — review manually',
+      });
+    if (!compatible || !unique)
+      invoiceErrors.push({
+        code: 'AMBIGUOUS_INVOICES',
+        message: 'invoice identities, currencies or payment recipients conflict — review manually',
+      });
+    const sum = (items, field) =>
+      fmtMoney(items.reduce((total, invoice) => total + Number(invoice[field]), 0));
+    const paidInvoices = invoices.filter((invoice) => invoice.status !== CLAIM_STATUS.duplicate);
+    // Already-assessed invoices do not create a new shortfall alongside a
+    // separately paid invoice. Retain their identity and outcome in the notes.
+    const current = invoices.some((invoice) => Number(invoice.paid) > 0) ? paidInvoices : invoices;
+    const claimed = sum(current, 'claimed');
+    const paid = sum(invoices, 'paid');
+    if (
+      nClaims === 1 &&
+      first.currency !== first.paid_currency &&
+      [...fullText.matchAll(/^\s*Payment amount\s+(GBP|EUR)\s+(-?\d[\d,]*\.\d{2})\s*$/gim)].some(
+        (payment) =>
+          payment[1].toUpperCase() !== first.paid_currency ||
+          Math.abs(parseMoney(payment[2]) - Number(paid)) > 0.005,
+      )
+    )
+      invoiceErrors.push({
+        code: 'INVALID_CONVERSION_TOTAL',
+        message: 'conversion payment disagrees with the invoice totals — review manually',
+      });
+    const status = invoices.every((invoice) => invoice.status === CLAIM_STATUS.duplicate)
+      ? CLAIM_STATUS.duplicate
+      : current.every((invoice) => invoice.status === CLAIM_STATUS.paid)
+        ? CLAIM_STATUS.paid
+        : current.every((invoice) =>
+              [CLAIM_STATUS.paid, CLAIM_STATUS.planRate].includes(invoice.status),
+            )
+          ? CLAIM_STATUS.planRate
+          : Number(paid) === 0
+            ? CLAIM_STATUS.rejected
+            : CLAIM_STATUS.partial;
+    return {
+      ...first,
+      claimed,
+      paid,
+      status,
+      provider: [...new Set(invoices.map((invoice) => invoice.provider))].join('; '),
+      invoice: invoices.map((invoice) => invoice.invoice).join('; '),
+      treatment_date:
+        invoices
+          .map((invoice) => invoice.treatment_date)
+          .filter(Boolean)
+          .sort()[0] || '',
+      payment_date: findPaymentDate(seg) || sharedPaymentDate(fullText),
+      benefit_categories: [
+        ...new Set(invoices.map((invoice) => invoice.benefit_categories).filter(Boolean)),
+      ].join('; '),
+      is_dental: invoices.some((invoice) => invoice.is_dental === 'True') ? 'True' : 'False',
+      notes: invoices
+        .filter((invoice) => invoice.notes || invoice.status === CLAIM_STATUS.duplicate)
+        .map(
+          (invoice) =>
+            `Invoice ${invoice.invoice}: ${invoice.status}${invoice.notes ? ' — ' + invoice.notes : ''}`,
+        )
+        .join(' | '),
+      warnings: invoices.flatMap((invoice) => invoice.warnings),
+      errors: [...errors, ...invoiceErrors],
+    };
+  }
   const currencies = statementCurrencies(
     fullText.slice(0, fullText.indexOf('For Claim')),
     assessment,
     errors,
   );
   const converted = !!currencies?.columns;
+  const netAmountTable = /Amount excl\.[\s\S]*?tax\s*\/\s*discount/i.test(assessment);
   const benefit = [];
   for (const line of assessment.split(/\r?\n/)) {
     // A dated row that does not fit the table must not disappear from the claim.
@@ -212,6 +321,7 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
     const amounts = amountCells.map(parseMoney);
     if (
       !amounts.length ||
+      (!converted && netAmountTable && amounts.length !== 2) ||
       (converted &&
         (amounts.length !== currencies.columns ||
           amountCells.some(
@@ -236,10 +346,10 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
     const nonPayable = /non ?payable item/i.test(desc);
     const claimed = converted
       ? amounts[amounts.length - 2]
-      : nonPayable
+      : nonPayable || netAmountTable
         ? amounts[amounts.length - 1]
         : amounts[0];
-    benefit.push({ date, desc, claimed, nonPayable });
+    benefit.push({ date, desc, claimed, nonPayable, gross: amounts[0] });
   }
   if (!benefit.length)
     errors.push({
@@ -247,7 +357,7 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
       message: 'no benefit lines parsed — refusing zero-value assessment',
     });
 
-  const provM = /For treatment at\s+(.+?)\s*\(provider invoice\s+([^)]+)\)/i.exec(assessment);
+  const provM = /For treatment at\s+([\s\S]+?)\s*\(provider invoice\s+([^)]+)\)/i.exec(assessment);
   const provider = provM ? provM[1].replace(/\s+/g, ' ').trim() : '';
   const invoice = provM ? provM[2].replace(/\s+/g, ' ').trim() : '';
   if (!provM) warnings.push('provider line not found');
@@ -305,11 +415,12 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
     }
   }
 
-  const isDup = DUP_WORDING.test(assessment);
+  const isDup = DUP_WORDING.test(assessment.replace(/\s+/g, ' '));
   const notLiable = NOT_LIABLE.test(assessment);
   let status;
-  if (isDup) {
-    paid = 0;
+  // Duplicate wording can describe only one item in a partly paid claim.
+  // The validated total remains authoritative for the claim's payment.
+  if (isDup && paid === 0 && paidInClaimCurrency === 0) {
     status = CLAIM_STATUS.duplicate;
   } else if (Math.abs(paidInClaimCurrency - claimed) < 0.005) {
     status = CLAIM_STATUS.paid;
@@ -339,6 +450,15 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
       .filter((l) => REASON_LINE.test(l));
     notes = [...new Set(reasons)].join(' | ').slice(0, 250);
   }
+  if (netAmountTable && !converted && benefit.some((item) => item.gross !== item.claimed)) {
+    const gross = fmtMoney(benefit.reduce((sum, item) => sum + item.gross, 0));
+    notes = [
+      notes,
+      `Invoice before tax/discount ${currencies?.claimed || ''} ${gross}; final invoice ${currencies?.claimed || ''} ${fmtMoney(claimed)}`,
+    ]
+      .filter(Boolean)
+      .join(' | ');
+  }
 
   return {
     member,
@@ -357,7 +477,7 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
     payment_date:
       findPaymentDate(seg) ||
       findPaymentDate(fullText.slice(0, fullText.indexOf('For Claim'))) ||
-      (nClaims === 1 ? findPaymentDate(fullText) : ''),
+      sharedPaymentDate(fullText),
     notes,
     invoice,
     warnings,
@@ -443,7 +563,7 @@ export function parseRawDir({
         // Supporting documents can have opaque labels and the portal's statement tag.
         // Titles are evidence; scans require a review bound to the PDF's contents.
         const supportingTitle =
-          /(?:^|\n|[ \t]{2,})[ \t]*(?:(?:tax[ \t]+)?invoice\b|receipt\b|order[ \t]+(?:summary|details|confirmation)\b)/i;
+          /(?:^|\n|[ \t]{2,})[ \t]*(?:(?:tax[ \t]+)?invoice\b|receipt\b|order[ \t]+(?:summary|details|confirmation)\b)|\b(?:your\s+\w+\s+order confirmation|clinic booking order\s*#|order\s*#\S+\s+confirmed)\b/i;
         const statementMarker =
           /\b(?:For\s+Claim|(?:claim|payment)\s+(?:statement|summary)|Total\s+payment\s+made)\b/i;
         const standardAssessment =
@@ -457,6 +577,7 @@ export function parseRawDir({
           documents.push({
             file: `${member}/${claimId}/${f}`,
             sha256,
+            claimRefs: [...new Set(parsed.map((record) => record.claim_ref))],
             readable: !!text.trim(),
             needsConfirmation,
             automatic: standardAssessment,
@@ -480,7 +601,16 @@ export function parseRawDir({
               ],
             }));
         }
-        if (!parsed.length && supportingTitle.test(text) && !statementMarker.test(text)) {
+        const tillReceipt =
+          /\bReference No\s*:/i.test(text) &&
+          /\bItems\s+Qty\s+Price\s+Total\b/i.test(text) &&
+          /\bVAT Summary\b/i.test(text) &&
+          /\bTotal\s*:\s*[£€]?\d[\d,]*\.\d{2}/i.test(text);
+        if (
+          !parsed.length &&
+          (supportingTitle.test(text) || tillReceipt) &&
+          !statementMarker.test(text)
+        ) {
           supportingStatements.add(f);
         }
         if (!parsed.length && !supportingStatements.has(f)) {

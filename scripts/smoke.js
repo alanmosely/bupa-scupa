@@ -20,7 +20,9 @@ const screenshots =
   fs.mkdtempSync(path.join(os.tmpdir(), 'scupa-import-screens-'));
 fs.mkdirSync(screenshots, { recursive: true });
 const packaged = process.argv.includes('--packaged');
-const executablePath = packaged ? path.resolve('dist/win-unpacked/BUPA SCUPA.exe') : undefined;
+const executablePath = packaged
+  ? path.resolve(process.env.SCUPA_PACKAGE_DIR || 'dist', 'win-unpacked/BUPA SCUPA.exe')
+  : undefined;
 const app = await electron.launch({
   ...(executablePath ? { executablePath, args: [] } : { args: ['.'] }),
   env: {

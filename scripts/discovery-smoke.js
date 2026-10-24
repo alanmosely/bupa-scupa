@@ -12,6 +12,7 @@ let ambiguous = false;
 let wrongClaimsLink = false;
 let wrongClaimsList = false;
 let expireSecond = false;
+let expireNextList = false;
 const browsers = [];
 async function launchBrowser(options) {
   const browser = await launchInstalledBrowser(options);
@@ -47,6 +48,11 @@ async function launchBrowser(options) {
           '<main><ul><li class="a-list-lval-item"><h3 class="a-list-lval-key">Name</h3><p class="a-list-lval-value">Example Person</p></li></ul></main>';
       if (url.pathname === '/plan/dependants' && ambiguous)
         body = nav + '<main>Unrecognised layout</main>';
+      if (url.pathname.endsWith('GetAllClaimsActivity') && expireNextList) {
+        expireNextList = false;
+        await route.fulfill({ status: 401, body: 'Signed out' });
+        return;
+      }
       if (url.pathname.endsWith('GetAllClaimsActivity'))
         body = !/\/my-claims$/.test(currentPath)
           ? ''
@@ -147,6 +153,40 @@ assert.equal(
   false,
   'Recovery restores the dependant, not the holder',
 );
+// Expiry before switching members and during first-import confirmation uses
+// the same manual sign-in recovery as downloads, with ownership rechecked.
+for (const timing of ['between-members', 'confirmation']) {
+  let recoveryCount = 0;
+  let triggered = false;
+  const recoveredLists = await fetchHousehold({
+    launchBrowser,
+    confirmMember: async (member) => {
+      if (timing === 'confirmation' && member.displayName === 'Second Person') {
+        expireNextList = true;
+        triggered = true;
+      }
+      return true;
+    },
+    emit: (event) => {
+      if (
+        timing === 'between-members' &&
+        event.phase === 'member' &&
+        event.message.includes('Second Person')
+      ) {
+        expireNextList = true;
+        triggered = true;
+      }
+      if (event.phase === 'login' && /signed you out/.test(event.message)) recoveryCount++;
+    },
+  });
+  assert.equal(triggered, true);
+  assert.equal(recoveryCount, 1);
+  assert.deepEqual(
+    recoveredLists.map((member) => member.claims),
+    [1, 1, 0],
+  );
+  assert.equal(fs.existsSync(path.join(RAW, ids[1], REF)), false);
+}
 const recoveredManifest = fs.readFileSync(manifestPath);
 expireSecond = true;
 await assert.rejects(

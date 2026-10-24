@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { _electron as electron } from 'playwright-core';
 import { HEADERS, CLAIM_STATUS } from '../src/core/model.js';
 import { toCsv, parseCsv } from '../src/core/csv.js';
-import { syntheticPdf } from '../test/fixtures.js';
+import { syntheticPdf, statement } from '../test/fixtures.js';
+import { documentHash } from '../src/core/documents.js';
 
 // Every claim, person, document and note in this smoke is synthetic.
 fs.mkdirSync('.cache/smoke', { recursive: true });
@@ -121,6 +122,30 @@ fs.writeFileSync(
     files: ['statement_1_assessment.pdf', 'supporting_1_dental_invoice.pdf'],
   }),
 );
+const combinedDir = path.join(archive, 'raw', 'demo', rows[3].claim_ref);
+fs.mkdirSync(combinedDir, { recursive: true });
+const combinedName = 'statement_1_combined.pdf';
+const combined = path.join(combinedDir, combinedName);
+fs.writeFileSync(
+  combined,
+  syntheticPdf(statement({ ref: rows[3].claim_ref }) + '\n' + statement({ ref: partial })),
+);
+fs.writeFileSync(
+  path.join(combinedDir, 'current.json'),
+  JSON.stringify({ schemaVersion: 1, files: [combinedName] }),
+);
+fs.writeFileSync(
+  path.join(archive, 'parsed.json'),
+  JSON.stringify({
+    documents: [
+      {
+        file: `demo/${rows[3].claim_ref}/${combinedName}`,
+        sha256: documentHash(combined),
+        claimRefs: [rows[3].claim_ref, partial],
+      },
+    ],
+  }),
+);
 const launch = () =>
   electron.launch({
     args: ['.'],
@@ -183,6 +208,14 @@ try {
     await app.evaluate(() => globalThis.openedPdf),
     path.join(directory, 'supporting_1_dental_invoice.pdf'),
   );
+  await page
+    .getByRole('button', { name: /Related statement document statement_1_combined/ })
+    .click();
+  await page.waitForFunction(
+    () =>
+      ![...document.querySelectorAll('#detail-documents button')].some((button) => button.disabled),
+  );
+  assert.equal(await app.evaluate(() => globalThis.openedPdf), combined);
   await page.locator('#follow-up-details summary').click();
   await page
     .locator('#follow-up-notes')
