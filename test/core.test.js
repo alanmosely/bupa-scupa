@@ -18,6 +18,7 @@ const { parseStatementText, parseRawDir, pdfToText } = await import('../src/core
 const { mergeRecords, loadMaster } = await import('../src/core/merge.js');
 const {
   archivePdf,
+  validatePdf,
   verifyMemberRefs,
   retry,
   resolveNavigationHref,
@@ -37,7 +38,8 @@ const {
 } = await import('../src/core/service.js');
 const { parseCsv, toCsv } = await import('../src/core/csv.js');
 const { queryClaims, emptyFollowUp } = await import('../src/core/claims.js');
-const { uniqueMemberHref, selectClaims, downloadPdf } = await import('../src/core/portal.js');
+const { uniqueMemberHref, selectClaims, downloadPdf, fetchHousehold } =
+  await import('../src/core/portal.js');
 const { downloadProgress } = await import('../src/core/download-progress.js');
 const pdfAvailable = fs.existsSync('vendor/xpdf/pdftotext.exe');
 if (process.env.SCUPA_REQUIRE_PDF_TESTS === '1')
@@ -390,6 +392,27 @@ test('a single total row can contain multiple amount columns and a wrapped payee
     assert.equal(mergeRecords([r], opts()).added.length, 1);
   }
 });
+
+test(
+  'malformed payment totals defer the claim instead of using a partial amount',
+  { skip: !pdfAvailable },
+  () => {
+    process.env.SCUPA_PDFTOTEXT = path.resolve('vendor/xpdf/pdftotext.exe');
+    const raw = folder();
+    const directory = path.join(raw, 'test_member', REF);
+    fs.mkdirSync(directory, { recursive: true });
+    const pdf = path.join(directory, 'statement_1_demo.pdf');
+    for (const total of ['£80.005', '£8,0.00', '£80.00abc', '£80.00    £2.005']) {
+      fs.writeFileSync(
+        pdf,
+        syntheticPdf(statement().replace('to you    £80.00', `to you    ${total}`)),
+      );
+      const result = parseRawDir({ rawDir: raw, parsedPath: path.join(raw, 'parsed.json') });
+      assert.deepEqual(result.pending, [{ member: 'test_member', claim_ref: REF }]);
+      assert.equal(result.records[0].paid, '');
+    }
+  },
+);
 test('currency headers are honoured and uncertain currencies cannot merge', () => {
   const plain = statement().replaceAll('£', '');
   for (const code of ['GBP', 'EUR']) {
@@ -564,6 +587,42 @@ test('adjustment history is not added to current assessment', () => {
   assert.equal(r.claimed, '100.0');
   assert.equal(r.paid, '80.0');
 });
+
+test('reassessments use the final amount for each invoice despite padded headings', () => {
+  const invoice = (id, category, amount) =>
+    [
+      `For treatment  at Example Clinic (provider   invoice ${id})`,
+      `01/01/2000    ${category}    £${amount}    £${amount}`,
+      `Total adjustment payment made to you    £${amount}`,
+      `For treatment at Example Clinic (provider invoice  ${id})`,
+      `01/01/2000    ${category}    £${amount}`,
+      `Total payment made to you    £${amount}`,
+    ].join('\n');
+  const text =
+    `For Claim ${REF}\n` +
+    invoice('DEMO-1', 'Dentistry - Routine', '100.00') +
+    '\n' +
+    invoice('DEMO-2', 'Dentistry - Preventive', '200.00');
+  const [result] = parseStatementText(text, 'test_member');
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.provider, 'Example Clinic');
+  assert.equal(result.invoice, 'DEMO-1; DEMO-2');
+  assert.equal(result.claimed, '300.0');
+  assert.equal(result.paid, '300.0');
+  assert.equal(result.is_dental, 'True');
+  const [ambiguous] = parseStatementText(
+    text.replace('invoice  DEMO-2', 'invoice  DEMO-3'),
+    'test_member',
+  );
+  assert.ok(ambiguous.errors.some(({ code }) => code === 'MISSING_ASSESSMENT'));
+  assert.equal(
+    parseStatementText(
+      statement().replace('Specialist consultation', 'Orthoptic Therapy'),
+      'test_member',
+    )[0].is_dental,
+    'False',
+  );
+});
 test('merge bootstraps and repeated input is idempotent', () => {
   const o = opts();
   assert.equal(mergeRecords([record()], o).added.length, 1);
@@ -720,6 +779,15 @@ test('invalid amounts and duplicate master rows fail closed', () => {
   assert.throws(() => mergeRecords([{ ...record(), paid: 'NaN' }], o), /Invalid parsed/);
   fs.writeFileSync(o.masterPath, toCsv([record(), record()], util.HEADERS));
   assert.throws(() => mergeRecords([], o), /duplicate master/);
+  for (const fields of [{ paid: 'broken' }, { claimed: '100.005' }, { paid_currency: '' }]) {
+    const original = toCsv([{ ...record(), ...fields }], util.HEADERS);
+    fs.writeFileSync(o.masterPath, original);
+    assert.throws(
+      () => mergeRecords([record({ ref: OTHER })], o),
+      /Invalid amount or currency in master/,
+    );
+    assert.equal(fs.readFileSync(o.masterPath, 'utf8'), original);
+  }
 });
 test('CSV round trips quotes, commas and newlines and rejects malformed rows', () => {
   const r = { first: 'a,"b"\nc', second: 'x' };
@@ -744,6 +812,50 @@ test('PDF revisions preserve original and identical-download modification time',
   assert.match(archivePdf(p, file, b), /revision/);
   assert.deepEqual(fs.readFileSync(path.join(p, file)), a);
   assert.throws(() => archivePdf(p, file, Buffer.from('<html>Login</html>')), /not a complete PDF/);
+});
+
+test('a changed revision is preserved and the checkpoint uses the newly downloaded bytes', () => {
+  const directory = folder();
+  const filename = 'statement_1_demo.pdf';
+  const body = syntheticPdf(statement({ paid: '90.00' }));
+  const edited = syntheticPdf(statement({ paid: '70.00' }));
+  archivePdf(directory, filename, syntheticPdf(statement()));
+  const revision = archivePdf(directory, filename, body);
+  fs.writeFileSync(path.join(directory, revision), edited);
+  const file = {
+    href: 'https://membersworld.bupaglobal.com/api/sitecore/Plan/DownloadFile?fileId=synthetic',
+    filename,
+  };
+  const progress = downloadProgress(directory, [file]);
+  assert.throws(() => progress.save(file, revision, body), /differs from the download/);
+  const saved = archivePdf(directory, filename, body);
+  assert.notEqual(saved, revision);
+  assert.deepEqual(fs.readFileSync(path.join(directory, revision)), edited);
+  assert.deepEqual(fs.readFileSync(path.join(directory, saved)), body);
+  progress.save(file, saved, body);
+  assert.equal(downloadProgress(directory, [file]).reuse(file), saved);
+  assert.equal(archivePdf(directory, filename, body), saved);
+});
+
+test('an older checkpoint without a committed selection cannot supply an assessment', () => {
+  const raw = folder();
+  const directory = path.join(raw, 'test_member', REF);
+  fs.mkdirSync(directory, { recursive: true });
+  const filename = 'statement_1_demo.pdf';
+  fs.writeFileSync(path.join(directory, filename), syntheticPdf(statement()));
+  const file = {
+    href: 'https://membersworld.bupaglobal.com/api/sitecore/Plan/DownloadFile?fileId=synthetic',
+    filename,
+  };
+  const parse = () =>
+    parseRawDir({
+      rawDir: raw,
+      parsedPath: path.join(raw, 'parsed.json'),
+      extractText: () => statement(),
+    });
+  assert.equal(parse().records[0].paid, '80.0', 'Archives predating checkpoints still parse');
+  downloadProgress(directory, [file]).save(file, filename);
+  assert.equal(parse().records[0].paid, '');
 });
 test(
   'current PDF selection follows restored revisions without changing archived files',
@@ -821,13 +933,22 @@ test('invalid current-file metadata blocks parsing instead of falling back to hi
   }
 });
 
-test('full refresh includes older assessed claims while normal sync retains its overlap and stubs', () => {
-  const claims = [REF, OTHER].map((claimId) => ({ claimId, recievedDate: '01/01/2000' }));
-  // Both synthetic references predate this incremental cutoff.
-  assert.deepEqual(selectClaims(claims, '000201', new Set([OTHER])), [claims[1]]);
-  assert.deepEqual(selectClaims(claims, '000201', new Set([OTHER]), true), claims);
-  assert.deepEqual(selectClaims(claims, '000101'), claims);
-  assert.deepEqual(selectClaims([], '000201', new Set(), true), []);
+test('incremental sync includes untracked and awaiting claims outside the overlap', () => {
+  const untracked = 'CL000101000003';
+  const claims = [REF, OTHER, untracked].map((claimId) => ({
+    claimId,
+    recievedDate: '01/01/2000',
+  }));
+  const incremental = {
+    since: '000201',
+    archived: new Set([REF, OTHER]),
+    awaiting: new Set([OTHER]),
+  };
+  // All three references predate this cutoff; skip only the already assessed claim.
+  assert.deepEqual(selectClaims(claims, incremental), claims.slice(1));
+  assert.deepEqual(selectClaims(claims, { ...incremental, since: '000101' }), claims);
+  assert.deepEqual(selectClaims(claims, { ...incremental, fullRefresh: true }), claims);
+  assert.deepEqual(selectClaims([], { ...incremental, fullRefresh: true }), []);
 });
 
 test('member verification refuses foreign and unknown known-member lists', () => {
@@ -935,6 +1056,25 @@ test('download diagnostics classify content without retaining text or authentica
   assert.equal(describeDownload(Buffer.from([0xff, 0xd8, 0xff]), 200).format, 'jpeg');
 });
 
+test('PDF validation accepts cross-reference streams and rejects a wrong trailer offset', () => {
+  const header = '%PDF-1.5\n';
+  const object =
+    '1 0 obj\n<< /Type /XRef /Length 4 /Size 1 /W [1 2 1] >>\nstream\n\x00\x00\x00\xff\nendstream\nendobj\n';
+  const trailer = `startxref\n${header.length}\n%%EOF\n`;
+  assert.doesNotThrow(() => validatePdf(Buffer.from(header + object + trailer, 'latin1')));
+  assert.throws(
+    () => validatePdf(Buffer.from(header + object + 'startxref\n1\n%%EOF\n', 'latin1')),
+    /not a complete PDF/,
+  );
+  assert.throws(
+    () =>
+      validatePdf(
+        Buffer.from(header + object.replace('/XRef', '/SomethingElse') + trailer, 'latin1'),
+      ),
+    /not a complete PDF/,
+  );
+});
+
 test('invalid direct downloads fall back to the browser and still require a complete PDF', async () => {
   const href =
     'https://membersworld.bupaglobal.com/api/sitecore/Plan/DownloadFile?fileId=synthetic';
@@ -985,7 +1125,9 @@ test('invalid direct downloads fall back to the browser and still require a comp
 test('invalid responses from both transports remain refused with useful safe diagnostics', async () => {
   const href =
     'https://membersworld.bupaglobal.com/api/sitecore/Plan/DownloadFile?fileId=synthetic';
-  const body = Buffer.from('<html>Private response text must not be retained</html>');
+  const body = Buffer.from(
+    '<html>Private response text must not be retained\n%PDF-1.7\n%%EOF\n</html>',
+  );
   const invalid = [];
   const context = {
     request: {
@@ -1031,7 +1173,8 @@ test('login bodies trigger sign-in recovery even with a PDF content type', async
         status: () => 200,
         headers: () => ({ 'content-type': 'application/pdf' }),
         url: () => href,
-        body: async () => Buffer.from('<html><input type="password"></html>'),
+        body: async () =>
+          Buffer.from('<html><input type="password"><!-- %PDF-1.7 %%EOF --></html>'),
         dispose: async () => {
           disposed = true;
         },
@@ -1058,7 +1201,12 @@ test('browser fallback refuses redirects, oversized bodies and foreign download 
     },
   };
   await assert.rejects(
-    () => downloadPdf({ evaluate: async () => ({ tooLarge: true }) }, context, href),
+    () =>
+      downloadPdf(
+        { evaluate: async () => ({ tooLarge: true, status: 200, url: href }) },
+        context,
+        href,
+      ),
     { code: 'INVALID_DOWNLOAD' },
   );
   await assert.rejects(
@@ -1073,6 +1221,43 @@ test('browser fallback refuses redirects, oversized bodies and foreign download 
   await assert.rejects(() => downloadPdf({}, {}, 'https://example.invalid/document.pdf'), {
     code: 'INVALID_DOWNLOAD',
   });
+});
+
+test('login polling propagates long cooldowns and cancels shorter cooldowns', async () => {
+  for (const [status, retryAfter, code] of [
+    [429, '120', 'BUPA_RATE_LIMITED'],
+    [503, '120', 'BUPA_REQUEST_FAILED'],
+    [429, '10', 'CANCELLED'],
+  ]) {
+    let requests = 0;
+    const controller = new AbortController();
+    const url = 'https://membersworld.bupaglobal.com/my-claims';
+    const page = {
+      goto: async () => {},
+      url: () => url,
+      isClosed: () => false,
+      locator: () => ({ count: async () => 0 }),
+      evaluate: async () => {
+        if (++requests > 1) controller.abort();
+        return { status, url, retryAfter };
+      },
+    };
+    await assert.rejects(
+      () =>
+        fetchHousehold({
+          signal: controller.signal,
+          launchBrowser: async () => ({
+            newContext: async () => ({ newPage: async () => page }),
+            close: async () => {},
+          }),
+          emit: ({ phase }) => {
+            if (phase === 'download') controller.abort();
+          },
+        }),
+      (error) => error.code === code,
+    );
+    assert.equal(requests, 1);
+  }
 });
 
 test('portal errors distinguish rate limits, server failures and actual expired sessions', () => {

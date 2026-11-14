@@ -17,9 +17,16 @@ function readMetadata(file) {
 }
 
 export function currentClaimFiles(directory) {
-  const files = fs.readdirSync(directory).filter((file) => file.toLowerCase().endsWith('.pdf'));
   const manifest = path.join(directory, 'current.json');
-  if (!fs.existsSync(manifest)) return files;
+  const stat = fs.lstatSync(manifest, { throwIfNoEntry: false });
+  // Older interrupted runs could write a checkpoint before their first selection.
+  if (!stat && fs.existsSync(path.join(directory, 'download-progress.json'))) return [];
+  const files = fs
+    .readdirSync(directory, { withFileTypes: true })
+    .filter((file) => file.isFile() && file.name.toLowerCase().endsWith('.pdf'))
+    .map((file) => file.name);
+  if (!stat) return files;
+  if (!stat.isFile()) throw new Error('current.json must be a regular file');
   const current = readMetadata(manifest);
   if (
     current?.schemaVersion !== 1 ||
@@ -59,6 +66,11 @@ export function documentReviews(directory) {
   )
     throw new Error('Invalid document-reviews.json — review decisions cannot be trusted.');
   return { supporting: review.supporting, assessments };
+}
+
+/** A scan can move to another attachment slot without changing its bytes. */
+export function hasSupportingReview(reviews, sha256) {
+  return Object.values(reviews.supporting).some((entry) => entry.sha256 === sha256);
 }
 
 /** Resolve only a current statement PDF inside a known member's archive. */

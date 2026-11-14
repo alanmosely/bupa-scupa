@@ -142,6 +142,32 @@ test(
 );
 
 test(
+  'an image-only review follows identical bytes within the same claim',
+  { skip: !pdfAvailable },
+  () => {
+    const renamed = 'statement_3_scan.pdf';
+    const nextScan = path.join(directory, renamed);
+    fs.copyFileSync(scan, nextScan);
+    saveCurrent(['statement_1_demo.pdf', path.basename(scan)]);
+    pending();
+    review('supporting');
+    saveCurrent(['statement_1_demo.pdf', renamed]);
+    assert.equal(service.reparse().reviewRequired, 0);
+    const document = { file: `demo/${REF}/${renamed}`, sha256: documentHash(nextScan) };
+    assert.equal(
+      service.archiveHelp().documents.find((item) => item.file === document.file).supporting,
+      true,
+    );
+
+    fs.writeFileSync(nextScan, Buffer.concat([blank, Buffer.from('\n')]));
+    pending();
+    fs.copyFileSync(scan, nextScan);
+    review(null, document);
+    pending();
+  },
+);
+
+test(
   'unfamiliar assessments can be confirmed once, bound to exact bytes and filenames',
   { skip: !pdfAvailable },
   () => {

@@ -75,6 +75,7 @@ export function downloadProgress(directory, files, options = {}) {
       const saved = JSON.parse(fs.readFileSync(current, 'utf8'));
       if (
         saved.schemaVersion === 1 &&
+        saved.legacy !== true &&
         recent(stat.mtime.toISOString()) &&
         Array.isArray(saved.files) &&
         saved.files.length === files.length &&
@@ -86,7 +87,7 @@ export function downloadProgress(directory, files, options = {}) {
               typeof name === 'string' &&
               (name === file.filename ||
                 (name.startsWith(file.filename.slice(0, -4) + '__revision_') &&
-                  /^[a-f0-9]{32}\.pdf$/.test(name.slice(file.filename.length - 4 + 11)))),
+                  /^[a-f0-9]{32}(?:_\d+)?\.pdf$/.test(name.slice(file.filename.length - 4 + 11)))),
           ),
         );
         if (
@@ -111,8 +112,7 @@ export function downloadProgress(directory, files, options = {}) {
       /* An incomplete legacy claim must be downloaded again. */
     }
   }
-  const save = (file, name, downloadedAt = new Date().toISOString()) => {
-    const body = readPdf(name);
+  const save = (file, name, body, downloadedAt = new Date().toISOString()) => {
     const id = source(file);
     entries = entries.filter((entry) => entry.source !== id);
     entries.push({
@@ -126,7 +126,13 @@ export function downloadProgress(directory, files, options = {}) {
     atomicWrite(checkpoint, JSON.stringify({ schemaVersion: 1, files: entries }, null, 2));
   };
   return {
-    save,
+    /** @param {Buffer} [expectedBody] */
+    save(file, name, expectedBody) {
+      const body = readPdf(name);
+      if (expectedBody && !body.equals(expectedBody))
+        throw new Error('The saved PDF differs from the download. Please retry sync.');
+      save(file, name, body);
+    },
     reuse(file) {
       if (fullRefresh) return null;
       const entry = [...entries, ...legacy].find(
@@ -139,7 +145,7 @@ export function downloadProgress(directory, files, options = {}) {
       try {
         const body = readPdf(entry.file);
         if (body.length !== entry.bytes || hash(body) !== entry.sha256) return null;
-        save(file, entry.file, entry.downloadedAt);
+        save(file, entry.file, body, entry.downloadedAt);
         return entry.file;
       } catch {
         return null;

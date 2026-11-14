@@ -2,12 +2,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { REF, OTHER, syntheticPdf, approveAssessment } from '../test/fixtures.js';
+import { REF, OTHER, syntheticPdf, approveAssessment, statement } from '../test/fixtures.js';
+import { CLAIM_STATUS } from '../src/core/model.js';
 fs.mkdirSync('.cache/portal-tests', { recursive: true });
 process.env.SCUPA_DATA_DIR = fs.mkdtempSync(path.resolve('.cache/portal-tests/archive-'));
 process.env.SCUPA_PDFTOTEXT = path.resolve('vendor/xpdf/pdftotext.exe');
 const { launchInstalledBrowser } = await import('../src/core/browser.js');
 const { saveConfig, loadConfig, RAW, REPORTS } = await import('../src/core/util.js');
+const { currentClaimFiles } = await import('../src/core/documents.js');
 const { fetchHousehold, portalList } = await import('../src/core/portal.js');
 const { MASTER } = await import('../src/core/util.js');
 saveConfig({
@@ -21,6 +23,7 @@ saveConfig({
 let context;
 let listResponse;
 let detailsResponse;
+let statementPending = false;
 let downloadStatements = false;
 let downloadFailure = false;
 let failOtherMember = false;
@@ -31,6 +34,16 @@ let rateLimitAt = 0;
 let paid = '80.00';
 const downloads = [];
 const browserDownloads = [];
+function pendingStatement(reference) {
+  return [
+    '<div>Claim reference: ' + reference + '</div>',
+    '<p>Your claim has been accepted for payment.</p>',
+    '<h2>Claim documents</h2>',
+    '<h3>Invoice / Claim form</h3><p>Unavailable</p>',
+    '<h2>Your claim statement will be available to view here soon.</h2>',
+    '<p>Please check back later.</p>',
+  ].join('');
+}
 async function launchBrowser(options) {
   const browser = await launchInstalledBrowser(options);
   const makeContext = browser.newContext.bind(browser);
@@ -109,12 +122,15 @@ async function launchBrowser(options) {
           });
           return;
         }
-        html = downloadStatements
-          ? `<a href="/api/sitecore/Plan/DownloadFile?fileId=${url.searchParams.get('claimId')}" data-analytics-link="bupa-statement">Benefit statement</a>` +
-            (downloadFailure
-              ? '<a href="/api/sitecore/Plan/DownloadFile?fileId=fail" data-analytics-link="bupa-statement">Second statement</a>'
-              : '')
-          : (detailsResponse ?? '<div>Claim details: no attachments</div>');
+        const ref = url.searchParams.get('claimId');
+        if (statementPending && ref === REF) html = pendingStatement(ref);
+        else
+          html = downloadStatements
+            ? `<a href="/api/sitecore/Plan/DownloadFile?fileId=${url.searchParams.get('claimId')}" data-analytics-link="bupa-statement">Benefit statement</a>` +
+              (downloadFailure
+                ? '<a href="/api/sitecore/Plan/DownloadFile?fileId=fail" data-analytics-link="bupa-statement">Second statement</a>'
+                : '')
+            : (detailsResponse ?? '<div>Claim details: no attachments</div>');
       } else {
         if (url.pathname === '/member/second') selected = 'other_member';
         if (url.pathname === '/member/empty') selected = 'empty_member';
@@ -127,6 +143,21 @@ async function launchBrowser(options) {
   };
   return browser;
 }
+const { reparse } = await import('../src/core/service.js');
+const directory = path.join(RAW, 'test_member', REF);
+const currentFile = path.join(directory, 'current.json');
+downloadStatements = true;
+downloadFailure = true;
+await assert.rejects(
+  () => fetchHousehold({ launchBrowser, fullRefresh: true, confirmMember: async () => true }),
+  /HTTP 403/,
+);
+const firstPdf = 'statement_1_Benefit_statement.pdf';
+assert.equal(fs.existsSync(path.join(directory, firstPdf)), true);
+assert.deepEqual(currentClaimFiles(directory), []);
+downloadStatements = false;
+downloadFailure = false;
+statementPending = true;
 const confirmations = [];
 const fetched = await fetchHousehold({
   launchBrowser,
@@ -135,6 +166,12 @@ const fetched = await fetchHousehold({
     return true;
   },
 });
+statementPending = false;
+const awaiting = reparse({ dryRun: true }).changes.added.find((row) => row.claim_ref === REF);
+assert.equal(awaiting?.status, CLAIM_STATUS.awaiting);
+assert.equal(awaiting?.claimed, '');
+assert.equal(awaiting?.paid, '');
+assert.equal(fs.existsSync(path.join(directory, firstPdf)), true);
 assert.deepEqual(confirmations, ['test_member', 'other_member', 'empty_member']);
 assert.equal(fetched.length, 3);
 assert.equal(fetched[2].claims, 0);
@@ -164,6 +201,11 @@ for (const html of [
   '<h1>Service temporarily unavailable</h1>',
   '',
   '<div>No documents could be loaded due to an error</div>',
+  pendingStatement(OTHER),
+  pendingStatement(REF).replace(
+    '<p>Please check back later.</p>',
+    '<p>Documents could not be loaded.</p>',
+  ),
 ]) {
   detailsResponse = html;
   await assert.rejects(
@@ -174,9 +216,22 @@ for (const html of [
   assert.deepEqual(fs.readFileSync(manifest), manifestBefore);
 }
 detailsResponse = undefined;
+const selectionBefore = fs.readFileSync(currentFile);
+const corruptSelection = JSON.stringify({ schemaVersion: 1, files: ['missing.pdf'] });
+fs.writeFileSync(currentFile, corruptSelection);
+downloadStatements = true;
+downloads.length = 0;
+await assert.rejects(
+  () => fetchHousehold({ launchBrowser, fullRefresh: true, confirmMember: async () => true }),
+  { code: 'PARSE_FAILED' },
+);
+assert.equal(fs.readFileSync(currentFile, 'utf8'), corruptSelection);
+assert.equal(fs.existsSync(MASTER), false);
+assert.deepEqual(downloads, []);
+fs.writeFileSync(currentFile, selectionBefore);
+downloadStatements = false;
 const { mergeRecords } = await import('../src/core/merge.js');
 const { parseStatementText } = await import('../src/core/parse.js');
-const { statement } = await import('../test/fixtures.js');
 mergeRecords([
   ...parseStatementText(statement(), 'test_member'),
   ...parseStatementText(statement({ ref: OTHER }), 'other_member'),
@@ -195,10 +250,7 @@ await fetchHousehold({
 assert.deepEqual(reconfirmed, ['test_member', 'empty_member']);
 assert.equal(loadConfig().members.test_member.needsConfirmation, undefined);
 downloadStatements = true;
-const { reparse } = await import('../src/core/service.js');
 const { loadMaster } = await import('../src/core/merge.js');
-const directory = path.join(RAW, 'test_member', REF);
-const currentFile = path.join(directory, 'current.json');
 const originalFiles = [];
 for (const payment of ['80.00', '100.00', '80.00']) {
   paid = payment;
@@ -249,6 +301,15 @@ assert.equal(diagnostic.pdfHeader, false);
 
 const currentBefore = fs.readFileSync(currentFile);
 const masterBefore = fs.readFileSync(MASTER);
+statementPending = true;
+downloads.length = 0;
+await fetchHousehold({ launchBrowser, fullRefresh: true, confirmMember: async () => true });
+statementPending = false;
+assert.deepEqual(downloads, [OTHER]);
+assert.deepEqual(fs.readFileSync(currentFile), currentBefore);
+assert.equal(reparse().updated, 0);
+assert.deepEqual(fs.readFileSync(MASTER), masterBefore);
+
 downloadFailure = true;
 paid = '90.00';
 await assert.rejects(
@@ -338,5 +399,5 @@ try {
   await browser.close();
 }
 console.log(
-  'Synthetic portal smoke passed: member checks, zero claims, full refresh, PDF revisions, validated browser download fallback, private diagnostics, failed download preservation, interrupted-download resume, 100-claim rate limits, cancellation, and refusal of unfamiliar responses. No real Bupa requests.',
+  'Synthetic portal smoke passed: member checks, zero claims, pending statements, full refresh, PDF revisions, validated browser download fallback, private diagnostics, failed download preservation, interrupted-download resume, 100-claim rate limits, cancellation, and refusal of unfamiliar responses. No real Bupa requests.',
 );

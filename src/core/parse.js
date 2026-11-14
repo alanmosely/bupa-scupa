@@ -2,7 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { CLAIM_STATUS } from './model.js';
-import { currentClaimFiles, documentReviews, documentHash } from './documents.js';
+import {
+  currentClaimFiles,
+  documentReviews,
+  documentHash,
+  hasSupportingReview,
+} from './documents.js';
 import {
   RAW,
   PARSED,
@@ -16,11 +21,15 @@ import {
   atomicWrite,
 } from './util.js';
 
-const AMOUNT_CELL = /^-?[£€]?\s?\d[\d,]*\.\d{2}$/;
+const AMOUNT_CELL = /^-?[£€]?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}$/;
+const compactAmount = (value) => value.replace(/([£€])[ \t]+(?=\d)/g, '$1');
 const DUP_WORDING =
   /(?:won't pay this cost because we've\s+reviewed it before|we've reviewed this cost\s+before)/i;
 const NOT_LIABLE = /member is not liable to pay for the shortfall/i;
 const REASON_LINE = /unable to pay|won't pay|we cannot pay|cancelled\s*\/\s*rejected/i;
+const LIMIT_REASON = /paid the maximum allowed|adjusted this claim to reduce/i;
+const INVOICE_HEADING = /^\s*For\s+treatment\s+at\s+([\s\S]+?)\s*\(provider\s+invoice\s+([^)]+)\)/i;
+const ADJUSTMENT_TOTAL = /Total\s+adjustment\s+payment\s+made\b/gi;
 const matchesCurrency = (amount, currency) =>
   (!amount.includes('£') || currency === 'GBP') && (!amount.includes('€') || currency === 'EUR');
 
@@ -129,13 +138,16 @@ function findTotalLine(text) {
       lines[i],
     );
     if (!m) continue;
-    let line = lines[i];
+    let line = lines[i].slice(m[0].length);
     if (/your healthcare$/i.test(m[1].replace(/\s+/g, ' '))) {
-      if (!/^\s*provider\b/i.test(lines[i + 1] || '')) continue;
-      line += ' ' + lines[i + 1];
+      const provider = /^\s*provider\b/i.exec(lines[i + 1] || '');
+      if (!provider) continue;
+      line += ' ' + lines[i + 1].slice(provider[0].length);
     }
-    const amounts = line.match(/-?[£€]?\s?\d[\d,]*\.\d{2}/g);
-    if (!amounts) continue;
+    const amounts = compactAmount(line.trim().replace(/^:\s*/, ''))
+      .trim()
+      .split(/[ \t]+/);
+    if (!amounts.every((amount) => AMOUNT_CELL.test(amount))) continue;
     const values = amounts.map(parseMoney);
     return {
       paidTo: /healthcare/i.test(m[1]) ? 'provider' : 'you',
@@ -188,26 +200,69 @@ export function parseStatementText(rawText, member) {
   return records;
 }
 
+function currentAssessment(segment, errors) {
+  const invoiceMarks = [...segment.matchAll(/For\s+treatment\s+at\s+/gi)];
+  const prefix = segment.slice(0, invoiceMarks[0]?.index);
+  const prefixAdjustments = [...prefix.matchAll(ADJUSTMENT_TOTAL)];
+  const current = [];
+  if (prefixAdjustments.length === 1 && invoiceMarks.length) {
+    const afterAdjustment = prefix.slice(prefixAdjustments[0].index).replace(/^[^\n]*/, '');
+    current.push(afterAdjustment);
+  } else if (!prefixAdjustments.length) {
+    current.push(prefix);
+  }
+
+  const blocks = invoiceMarks.map((mark, index) =>
+    segment.slice(mark.index, invoiceMarks[index + 1]?.index),
+  );
+  // Each historical invoice must be followed by its own final assessment.
+  // Discard an adjustment only when both headings identify the same invoice.
+  let missingAssessment =
+    prefixAdjustments.length > 1 || (!!prefixAdjustments.length && !blocks.length);
+  for (const [index, block] of blocks.entries()) {
+    const adjustments = [...block.matchAll(ADJUSTMENT_TOTAL)];
+    if (!adjustments.length) {
+      current.push(block);
+      continue;
+    }
+    const previous = INVOICE_HEADING.exec(block);
+    const nextBlock = blocks[index + 1] || '';
+    const next = INVOICE_HEADING.exec(nextBlock);
+    if (
+      adjustments.length !== 1 ||
+      !previous ||
+      !next ||
+      previous
+        .slice(1)
+        .some(
+          (value, field) =>
+            value.replace(/\s+/g, ' ').trim() !== next[field + 1].replace(/\s+/g, ' ').trim(),
+        ) ||
+      /Total\s+payment\s+made\s+to/i.test(block) ||
+      [...nextBlock.matchAll(ADJUSTMENT_TOTAL)].length ||
+      !findTotalLine(nextBlock)
+    ) {
+      missingAssessment = true;
+    }
+  }
+  if (missingAssessment)
+    errors.push({
+      code: 'MISSING_ASSESSMENT',
+      message: 'current assessment not found after adjustment',
+    });
+  return current.join('');
+}
+
 function parseClaimSegment(seg, ref, member, fullText, nClaims) {
   const warnings = [];
   /** @type {Array<{code: string, message: string}>} */
   const errors = [];
-  let assessment = seg;
-  const adjustment = /Total\s+adjustment\s+payment\s+made[^\n]*/i.exec(seg);
-  if (adjustment) {
-    const tail = seg.slice(adjustment.index + adjustment[0].length);
-    const current = tail.search(/For treatment at/i);
-    assessment = current >= 0 ? tail.slice(current) : '';
-    if (current < 0)
-      errors.push({
-        code: 'MISSING_ASSESSMENT',
-        message: 'current assessment not found after adjustment',
-      });
-  }
+  const adjustment = /Total\s+adjustment\s+payment\s+made\b/i.test(seg);
+  const assessment = adjustment ? currentAssessment(seg, errors) : seg;
   // A claim can contain several separately assessed invoices. Split only at
   // explicit provider/invoice boundaries; repeated totals within one invoice
   // remain ambiguous and must never be silently added together.
-  const invoiceMarks = [...assessment.matchAll(/For treatment at\s+/gi)];
+  const invoiceMarks = [...assessment.matchAll(/For\s+treatment\s+at\s+/gi)];
   if (invoiceMarks.length > 1) {
     const invoices = invoiceMarks.map((mark, index) =>
       parseClaimSegment(
@@ -315,7 +370,7 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
     if (!/^\s*(?:\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2})\b/.test(line)) continue;
     const cells = line.trim().split(/\s{2,}/);
     const amountCells = [];
-    while (cells.length > 1 && AMOUNT_CELL.test(cells[cells.length - 1])) {
+    while (cells.length > 1 && AMOUNT_CELL.test(compactAmount(cells[cells.length - 1]))) {
       amountCells.unshift(cells.pop());
     }
     const amounts = amountCells.map(parseMoney);
@@ -333,7 +388,7 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
           ))) ||
       cells.length < 2 ||
       !/^\d{2}\/\d{2}\/\d{4}$/.test(cells[0]) ||
-      cells.slice(1).some((cell) => /(?:^|\s)-?[£€]?\d[\d,]*\.\d{2}(?:\s|$)/.test(cell))
+      cells.slice(1).some((cell) => /(?:^|\s)-?[£€]?\s?\d[\d,]*\.\d+(?:\s|$)/.test(cell))
     ) {
       errors.push({
         code: 'UNPARSED_BENEFIT',
@@ -357,7 +412,7 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
       message: 'no benefit lines parsed — refusing zero-value assessment',
     });
 
-  const provM = /For treatment at\s+([\s\S]+?)\s*\(provider invoice\s+([^)]+)\)/i.exec(assessment);
+  const provM = INVOICE_HEADING.exec(assessment.slice(invoiceMarks[0]?.index ?? assessment.length));
   const provider = provM ? provM[1].replace(/\s+/g, ' ').trim() : '';
   const invoice = provM ? provM[2].replace(/\s+/g, ' ').trim() : '';
   if (!provM) warnings.push('provider line not found');
@@ -435,7 +490,9 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
   const categories = [
     ...new Set(benefit.filter((b) => !b.nonPayable && b.desc).map((b) => b.desc)),
   ].join('; ');
-  const isDental = /dental|ortho|hygien/i.test(categories + ' ' + provider) ? 'True' : 'False';
+  const isDental = /dentistry|dental|orthodont|hygien/i.test(categories + ' ' + provider)
+    ? 'True'
+    : 'False';
   const treatmentDate =
     benefit
       .map((b) => b.date)
@@ -444,10 +501,19 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
 
   let notes = '';
   if (status !== CLAIM_STATUS.paid) {
-    const reasons = assessment
+    const lines = assessment
       .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => REASON_LINE.test(l));
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const reasons = [];
+    for (const [index, line] of lines.entries()) {
+      if (REASON_LINE.test(line)) reasons.push(line);
+      else if (LIMIT_REASON.test(line.replace(/\s+/g, ' '))) {
+        const reason = line.replace(/\s+-[\d,]+\.\d{2}\s*$/, '').replace(/\s+/g, ' ');
+        const continuation = lines[index + 1] || '';
+        reasons.push(/^agreement\.$/i.test(continuation) ? `${reason} ${continuation}` : reason);
+      }
+    }
     notes = [...new Set(reasons)].join(' | ').slice(0, 250);
   }
   if (netAmountTable && !converted && benefit.some((item) => item.gross !== item.claimed)) {
@@ -572,6 +638,7 @@ export function parseRawDir({
           !supportingTitle.test(text.slice(0, Math.max(0, text.search(/For\s+Claim/i))));
         if (parsed.length || !text.trim()) {
           const sha256 = documentHash(path.join(claimDir, f));
+          const reviewedSupporting = !text.trim() && hasSupportingReview(reviews, sha256);
           const needsConfirmation =
             parsed.length > 0 && !standardAssessment && reviews.assessments[f]?.sha256 !== sha256;
           documents.push({
@@ -584,9 +651,9 @@ export function parseRawDir({
             needsAttention:
               needsConfirmation ||
               parsed.some((rec) => rec.errors.length) ||
-              (!text.trim() && reviews.supporting[f]?.sha256 !== sha256),
+              (!text.trim() && !reviewedSupporting),
           });
-          if (!text.trim() && reviews.supporting[f]?.sha256 === sha256) supportingStatements.add(f);
+          if (reviewedSupporting) supportingStatements.add(f);
           // Routine Bupa layouts import automatically. Unfamiliar documents still
           // need a decision bound to their own bytes, independent of cached text.
           if (needsConfirmation)

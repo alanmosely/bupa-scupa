@@ -25,7 +25,9 @@ See [privacy](../PRIVACY.md).
 Each successfully downloaded claim has a `current.json` file beside its PDFs.
 It identifies the complete set returned by the portal, including a restored older
 revision. Parsing uses those files; previous PDFs remain as history. A failed or
-cancelled claim download leaves its previous selection intact.
+cancelled claim download leaves its previous selection intact. For a new claim,
+PDFs saved during an interrupted download stay out of the assessment until the
+complete attachment list has been downloaded and checked.
 
 After a failed or cancelled sync, click **Sync with Bupa** again to resume.
 Sign in and confirm members as usual. SCUPA rechecks the portal's attachment lists
@@ -48,7 +50,10 @@ Archives created before this metadata existed use payment dates and file times
 until refreshed. Use **Archive options → Refresh all claims** to record the
 current files for every claim still available in Bupa's 36-month window. This
 also catches reassessments outside the normal 14-day incremental overlap.
-**Recheck saved PDFs** works offline and does not fetch portal changes.
+Normal sync always checks claims missing from the verified member's archive,
+even when their references are older than the overlap. It also revisits claims
+awaiting statements or a document review. **Recheck saved PDFs** works offline
+and does not fetch portal changes.
 
 After a successful sync or recheck, expand **View changes** to see added claims
 and the previous and new values for updated claims. Claimed and paid amounts use
@@ -176,8 +181,10 @@ outside SCUPA and cannot supply payment amounts to the parser.
 Both assessment confirmations and supporting decisions are saved beside the PDF
 in `document-reviews.json`, tied to that
 claim, filename and SHA-256 content hash. The PDF is never renamed or changed.
-A different revision requires a fresh review. **Undo supporting classification**
-removes the decision; the next parse will flag the affected claim again.
+An image-only supporting review follows a byte-identical copy within the same
+claim if Bupa changes its attachment filename. Different bytes require a fresh
+review. **Undo supporting classification** removes the review for those bytes;
+the next parse will flag the affected claim again.
 **Undo assessment confirmation** similarly defers an unfamiliar assessment,
 without removing historical master records. Recognised Bupa statements continue
 to import automatically. Agents cannot make manual document-review decisions.

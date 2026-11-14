@@ -43,22 +43,36 @@ export function resolveNavigationHref(links, needle, baseUrl, memberId = null) {
   return null;
 }
 
+const pdfHeaderLine = /^%PDF-\d\.\d[\r\n]/;
+
 export function validatePdf(body) {
-  if (
-    !Buffer.isBuffer(body) ||
-    !body.subarray(0, 1024).includes(Buffer.from('%PDF-')) ||
-    !body.subarray(-4096).includes(Buffer.from('%%EOF'))
-  ) {
-    throw new Error('Download is not a complete PDF (possible login page or truncated response)');
+  if (Buffer.isBuffer(body) && pdfHeaderLine.test(body.subarray(0, 16).toString('latin1'))) {
+    const tail = body.subarray(-4096).toString('latin1');
+    const trailer =
+      /(?:^|[\r\n])startxref[ \t]*[\r\n]+[ \t]*(\d+)[ \t]*[\r\n]+%%EOF[\x00\t\n\f\r ]*$/.exec(tail);
+    const offset = Number(trailer?.[1]);
+    if (trailer && offset > 0 && offset < body.length - tail.length + trailer.index) {
+      const xref = body.subarray(offset, offset + 4096).toString('latin1');
+      // PDFs can use either a cross-reference table or a cross-reference stream.
+      const stream = /^\d+\s+\d+\s+obj\s*<<([\s\S]*?)>>\s*stream[\r\n]/.exec(xref);
+      if (
+        /^xref\s+\d+\s+\d+\s+\d{10}[ \t]+\d{5}[ \t]+[nf]\b/.test(xref) ||
+        (stream && /\/Type\s*\/XRef(?:[\s/<[>]|$)/.test(stream[1]))
+      )
+        return;
+    }
   }
+  throw new Error('Download is not a complete PDF (possible login page or truncated response)');
 }
 
 /** Safe diagnostics only: never return document text, URLs or authentication data. */
 export function describeDownload(body, status, contentType = '') {
   const prefix = body.subarray(0, 1024);
   const text = prefix.toString('utf8');
-  const pdfHeader = prefix.includes(Buffer.from('%PDF-'));
-  const pdfTrailer = body.subarray(-4096).includes(Buffer.from('%%EOF'));
+  const pdfHeader = pdfHeaderLine.test(prefix.toString('latin1'));
+  const pdfTrailer = /(?:^|[\r\n])%%EOF[\x00\t\n\f\r ]*$/.test(
+    body.subarray(-4096).toString('latin1'),
+  );
   const format = !body.length
     ? 'empty'
     : pdfHeader
@@ -100,16 +114,18 @@ export function describeDownload(body, status, contentType = '') {
 // Changed content gets a new filename; identical downloads leave the archive alone.
 export function archivePdf(directory, filename, body) {
   validatePdf(body);
-  const destination = path.join(directory, filename);
-  if (!fs.existsSync(destination)) {
-    atomicWrite(destination, body);
-    return filename;
+  const revision = `${path.basename(filename, '.pdf')}__revision_${md5(body)}`;
+  for (let index = 0; ; index++) {
+    const name = index === 0 ? filename : `${revision}${index === 1 ? '' : `_${index}`}.pdf`;
+    const destination = path.join(directory, name);
+    const stat = fs.lstatSync(destination, { throwIfNoEntry: false });
+    if (!stat) {
+      atomicWrite(destination, body);
+      return name;
+    }
+    if (stat.isFile() && stat.size === body.length && fs.readFileSync(destination).equals(body))
+      return name;
   }
-  if (fs.readFileSync(destination).equals(body)) return filename;
-  const revision = `${path.basename(filename, '.pdf')}__revision_${md5(body)}.pdf`;
-  const revisionPath = path.join(directory, revision);
-  if (!fs.existsSync(revisionPath)) atomicWrite(revisionPath, body);
-  return revision;
 }
 
 export function verifyMemberRefs(target, refs, byMember) {
