@@ -55,7 +55,7 @@ and undici 6.29.1/7.30.1 for newly reported advisories. See the
 [undici advisory](https://github.com/advisories/GHSA-4qv8-2p9j-2685).
 These retain their package licences; the complete dependency audit is clear.
 
-## Version 0.3.2 build tools
+## Build tool security updates — 13 November 2026
 
 The lockfile updates the ASAR inspection tool and ESLint, and pins patched
 versions of minimatch and Electron Universal in the Windows build tool's
