@@ -531,7 +531,7 @@ async function operate(command, ...args) {
     if ('changes' in result) changes = result;
     message(
       'added' in result
-        ? `Done. ${result.added} claims added, ${result.updated} updated.${result.reviewRequired ? ` ${result.reviewRequired} ${result.reviewRequired === 1 ? 'claim needs' : 'claims need'} attention. Open Archive help for details.` : ''}`
+        ? `Done. ${result.added} claims added, ${result.updated} updated.${result.reviewRequired ? ` ${result.reviewRequired} ${result.reviewRequired === 1 ? 'claim needs' : 'claims need'} attention. Open Archive help for details.` : ''}${result.reportPending ? ' The change report is pending. Check that the reports folder is writable, then recheck saved PDFs.' : ''}`
         : 'Household saved. You’re ready for your first sync.',
     );
   } catch (error) {

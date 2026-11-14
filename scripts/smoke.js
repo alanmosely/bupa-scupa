@@ -137,10 +137,16 @@ try {
     path.join(archive, '.scupa-lock'),
     JSON.stringify({ pid: child.pid, startedAt: new Date().toISOString() }),
   );
+  fs.writeFileSync(
+    path.join(archive, `.scupa-recovery-${child.pid}-00000000-0000-4000-8000-000000000001`),
+    '',
+  );
+  fs.mkdirSync(path.join(archive, '.scupa-recovery'));
   await page.locator('#archive-help').click();
   await page.locator('#recover-lock').click();
   await page.getByText('Interrupted run recovered.', { exact: false }).waitFor();
   assert.equal(fs.existsSync(path.join(archive, '.scupa-lock')), false);
+  assert.equal(fs.existsSync(path.join(archive, '.scupa-recovery')), false);
   await page.locator('#close-help').click();
   const convertedDirectory = path.join(archive, 'raw', member, OTHER);
   fs.mkdirSync(convertedDirectory, { recursive: true });
@@ -149,18 +155,32 @@ try {
     syntheticPdf(convertedStatement({ ref: OTHER })),
   );
   approveAssessment(convertedDirectory, 'statement_1_converted.pdf');
+  const reports = path.join(archive, 'reports');
+  const savedReports = path.join(archive, 'saved-reports');
+  fs.renameSync(reports, savedReports);
+  fs.writeFileSync(reports, 'Synthetic obstruction');
   await page.locator('#reparse').click();
   await page.waitForFunction(() => document.getElementById('claim-count').textContent === '2');
+  await page.getByText('The change report is pending.', { exact: false }).waitFor();
   const convertedRow = page.locator('#claims tr').filter({ hasText: OTHER });
   assert.equal(await convertedRow.locator('td').nth(2).textContent(), '€100.00');
   assert.equal(await convertedRow.locator('td').nth(3).textContent(), '£64.00');
   assert.equal(await convertedRow.locator('.status-chip').textContent(), 'Partially Paid');
   assert.equal(await page.locator('#paid-total').textContent(), '£144.00');
+  const journal = path.join(archive, 'master', 'claims.csv.pending-report.json');
+  assert.equal(fs.existsSync(journal), true);
+  fs.unlinkSync(reports);
+  fs.renameSync(savedReports, reports);
+  const existingReports = fs.readdirSync(reports).length;
   await page.locator('#changes-title').click();
   assert.match(
     await page.locator('#changes-list').textContent(),
     /Claimed €100\.00 · Paid £64\.00/,
   );
+  await page.locator('#reparse').click();
+  await page.getByText('Done. 0 claims added, 0 updated.', { exact: false }).waitFor();
+  assert.equal(fs.existsSync(journal), false);
+  assert.equal(fs.readdirSync(reports).length, existingReports + 1);
   fs.writeFileSync(
     path.join(directory, 'statement_1_demo.pdf'),
     syntheticPdf(statement({ paid: '100.00', date: '03/01/2000' })),

@@ -1503,9 +1503,93 @@ test('recovery refuses active, malformed and guarded locks but releases a dead p
   assert.equal(child.status, 0);
   fs.writeFileSync(lock, JSON.stringify({ pid: child.pid, startedAt: new Date().toISOString() }));
   assert.equal(inspectLock().state, 'stale');
+  fs.mkdirSync(util.RAW, { recursive: true });
   const rawBefore = fs.readdirSync(util.RAW);
   assert.deepEqual(recoverLock(), { recovered: true });
   assert.equal(fs.existsSync(lock), false);
   assert.deepEqual(fs.readdirSync(util.RAW), rawBefore);
   assert.equal(archiveHelp().lock.state, 'unlocked');
+});
+
+test('a live recovery owner prevents another process from replacing its guard', () => {
+  const guard = path.join(util.DATA, '.scupa-recovery');
+  const owner = path.join(
+    util.DATA,
+    `.scupa-recovery-${process.pid}-00000000-0000-4000-8000-000000000001`,
+  );
+  fs.writeFileSync(owner, '');
+  fs.mkdirSync(guard);
+  try {
+    const child = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `
+      import assert from 'node:assert/strict';
+      import { acquireLock, recoverLock } from './src/core/service.js';
+      assert.throws(acquireLock, { code: 'BUSY' });
+      assert.throws(recoverLock, { code: 'BUSY' });
+    `,
+      ],
+      { encoding: 'utf8', windowsHide: true },
+    );
+    assert.equal(child.status, 0, child.stderr);
+    assert.equal(fs.statSync(guard).isDirectory(), true);
+    assert.equal(fs.existsSync(owner), true);
+  } finally {
+    fs.rmdirSync(guard);
+    fs.unlinkSync(owner);
+  }
+});
+
+test('recovery survives a process exit before and after removing the stale archive lock', () => {
+  const lock = path.join(util.DATA, '.scupa-lock');
+  const guard = path.join(util.DATA, '.scupa-recovery');
+  for (const interruptAfterRemoval of [false, true]) {
+    const previous = spawnSync(process.execPath, ['-e', ''], { windowsHide: true });
+    assert.equal(previous.status, 0);
+    fs.writeFileSync(
+      lock,
+      JSON.stringify({ pid: previous.pid, startedAt: new Date().toISOString() }),
+    );
+    const child = spawnSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `
+      import fs from 'node:fs';
+      import { recoverLock } from './src/core/service.js';
+      const unlinkSync = fs.unlinkSync;
+      fs.unlinkSync = (file) => {
+        if (!String(file).endsWith('.scupa-lock')) return unlinkSync(file);
+        if (${interruptAfterRemoval}) unlinkSync(file);
+        process.exit(77);
+      };
+      recoverLock();
+    `,
+      ],
+      { encoding: 'utf8', windowsHide: true },
+    );
+    assert.equal(child.status, 77, child.stderr);
+    assert.equal(inspectLock().state, 'stale');
+    assert.equal(inspectLock().recoverable, true);
+    assert.equal(fs.existsSync(lock), !interruptAfterRemoval);
+    assert.equal(fs.existsSync(guard), true);
+    const release = acquireLock();
+    assert.equal(fs.existsSync(guard), false);
+    release();
+    assert.equal(inspectLock().state, 'unlocked');
+  }
+});
+
+test('a merge whose journal cannot be saved leaves the previous master intact', () => {
+  const options = opts();
+  mergeRecords([record()], options);
+  const before = fs.readFileSync(options.masterPath);
+  const journal = `${options.masterPath}.pending-report.json`;
+  fs.mkdirSync(journal);
+  assert.throws(() => mergeRecords([record({ ref: OTHER })], options), /previous change report/);
+  assert.deepEqual(fs.readFileSync(options.masterPath), before);
 });

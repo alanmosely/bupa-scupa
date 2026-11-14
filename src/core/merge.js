@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
 import { parseCsv, toCsv } from './csv.js';
 import { CLAIM_STATUS } from './model.js';
 import {
@@ -71,6 +72,30 @@ const nearly = (a, b) => {
 };
 
 const appendNote = (existing, note) => (existing ? `${existing} | ${note}` : note);
+const csvHash = (csv) => (csv === null ? null : createHash('sha256').update(csv).digest('hex'));
+const reportWarning =
+  'The change report is pending. Check that the reports folder is writable, then recheck saved PDFs to save it.';
+
+/** @param {string} journal @param {string | null} masterHash @param {string} reportsDir */
+function finishChangeReport(journal, masterHash, reportsDir) {
+  if (!fs.existsSync(journal)) return true;
+  try {
+    const { previous, next, name, summary } = JSON.parse(fs.readFileSync(journal, 'utf8'));
+    if (!/^changes_[\d-]+_[a-f0-9-]{36}\.md$/.test(name) || typeof summary !== 'string')
+      return false;
+    if (masterHash === next) {
+      // The same destination also makes a retry after a crash during cleanup idempotent.
+      atomicWrite(path.join(reportsDir, name), summary);
+    } else if (masterHash !== previous) {
+      return false;
+    }
+    fs.unlinkSync(journal);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function assessmentNotes(notes = '') {
   // Keep the CSV schema and existing audit history. A JSON string lets new
   // reasons contain separators, quotes or previous audit wording unambiguously.
@@ -227,29 +252,41 @@ export function mergeRecords(
       a.claim_ref.localeCompare(b.claim_ref),
   );
 
+  const watch = checkWatchlist(cfg, records, byRef);
+  const summary = buildSummary({ added, updated, warnings, watch, total: sorted.length });
+  let reportPending = false;
   if (!dryRun) {
+    const previousCsv = fs.existsSync(masterPath) ? fs.readFileSync(masterPath, 'utf8') : null;
+    const previous = csvHash(previousCsv);
+    const journal = `${masterPath}.pending-report.json`;
     const csv = toCsv(sorted, HEADERS);
-    if (!fs.existsSync(masterPath) || csv !== fs.readFileSync(masterPath, 'utf8')) {
+    reportPending = !finishChangeReport(journal, previous, reportsDir);
+    if (csv !== previousCsv) {
+      if (reportPending)
+        throw new Error(
+          'A previous change report is pending. Check the reports folder before saving more changes.',
+        );
       const backupDir = path.join(path.dirname(masterPath), 'backups');
       ensureDir(backupDir);
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-      if (fs.existsSync(masterPath))
+      if (previousCsv !== null)
         fs.copyFileSync(
           masterPath,
           path.join(backupDir, `${path.basename(masterPath)}.${stamp}.${process.pid}.bak`),
           fs.constants.COPYFILE_EXCL,
         );
+      const next = csvHash(csv);
+      if (added.length || updated.length) {
+        const name = `changes_${nowStamp()}_${randomUUID()}.md`;
+        atomicWrite(journal, JSON.stringify({ previous, next, name, summary }));
+      }
       atomicWrite(masterPath, csv);
+      reportPending = !finishChangeReport(journal, next, reportsDir);
     }
   }
 
-  const watch = checkWatchlist(cfg, records, byRef);
-  const summary = buildSummary({ added, updated, warnings, watch, total: sorted.length });
-  if (!dryRun && (added.length || updated.length)) {
-    ensureDir(reportsDir);
-    atomicWrite(path.join(reportsDir, `changes_${nowStamp()}_${Date.now()}.md`), summary);
-  }
-  return { added, updated, warnings, watch, summary, rows: sorted };
+  if (reportPending) warnings.push(reportWarning);
+  return { added, updated, warnings, watch, summary, rows: sorted, reportPending };
 }
 
 function checkWatchlist(cfg, records, byRef) {
