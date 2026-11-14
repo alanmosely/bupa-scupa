@@ -61,6 +61,12 @@ their own currencies. The summary covers the latest run in this window and clear
 when another run starts or you change archives. Change reports are also saved in
 `reports/`.
 
+If the change report cannot be saved after the CSV is updated, SCUPA shows a
+pending-report message and retains the report details beside the master CSV.
+Restore write access to `reports/` and choose **Recheck saved PDFs** to save the
+report without reimporting those claims. Keep the pending report file with the
+archive backup until the retry succeeds.
+
 Changes to Bupa's assessment reasons count as updates even when the payment and
 status stay the same. Dated assessment-note entries retain the new reason and the
 previous audit history. Rechecking unchanged PDFs does not add repeat entries.
@@ -205,7 +211,10 @@ Close other SCUPA windows, then open **Archive help → Recover interrupted run*
 Recovery is offered only when the lock owner is confirmed to have stopped.
 Normal errors and cancellation release locks automatically.
 
-An unreadable lock or interrupted recovery guard cannot be removed automatically.
+If recovery itself was interrupted, the same action can release a guard whose
+owner is confirmed to have stopped. Agent writes also retry a verified stale
+recovery guard automatically. An unreadable lock or a recovery guard left by
+an older version without owner information requires manual recovery.
 Close all SCUPA and associated browser processes, restarting Windows if uncertain.
 Then remove only `.scupa-lock` and `.scupa-recovery` from the archive and retry.
 Do not remove the PDFs or master.

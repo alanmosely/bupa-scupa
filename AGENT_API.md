@@ -38,6 +38,10 @@ unchanged. Archive corruption and conflicting ownership still produce
 `PARSE_FAILED` without changing the master. The agent interface cannot make manual
 document-review decisions. See [archive recovery](docs/ARCHIVE.md#parsing-errors).
 
+A committed `parse` or `sync` can return `ok: true` with `reportPending: true`
+and a warning. The claim changes in the response were saved. Restore write
+access to `reports/` and rerun `parse` to save the pending change report.
+
 | Command                 | Access                 | Result                                                                                   |
 | ----------------------- | ---------------------- | ---------------------------------------------------------------------------------------- |
 | `schema`                | Read                   | Commands, options, API version and exit codes                                            |

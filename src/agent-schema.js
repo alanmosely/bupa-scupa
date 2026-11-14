@@ -49,6 +49,7 @@ const parse = object({
   dryRun: { type: 'boolean' },
 });
 parse.properties.reviewRequired = count;
+parse.properties.reportPending = { const: true };
 const results = {
   schema: object({
     schemaVersion: { const: 1 },

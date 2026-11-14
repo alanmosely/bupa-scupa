@@ -167,6 +167,41 @@ test('archive aliases cannot bypass the response destination guard', () => {
 });
 
 test(
+  'agent parsing reports a committed update and retries its pending change report',
+  { skip: !pdfAvailable },
+  () => {
+    const { archive, master } = fixture();
+    const reports = path.join(archive, 'reports');
+    const journal = `${master}.pending-report.json`;
+    fs.writeFileSync(reports, 'Synthetic obstruction');
+    const committed = invoke('parse', archive).value;
+    assert.equal(committed.ok, true);
+    assert.equal(committed.result.added, 1);
+    assert.equal(committed.result.reportPending, true);
+    assert.match(committed.result.warnings.at(-1), /change report is pending/i);
+    const saved = fs.readFileSync(master);
+    assert.equal(fs.existsSync(journal), true);
+
+    fs.unlinkSync(reports);
+    assert.equal(invoke('parse', archive, ['--dry-run']).value.ok, true);
+    assert.equal(fs.existsSync(reports), false);
+    assert.equal(fs.existsSync(journal), true);
+    const retry = invoke('parse', archive).value;
+    assert.equal(retry.ok, true);
+    assert.equal(retry.result.added, 0);
+    assert.equal(retry.result.updated, 0);
+    assert.equal(retry.result.reportPending, undefined);
+    assert.deepEqual(fs.readFileSync(master), saved);
+    assert.equal(fs.existsSync(journal), false);
+    const files = fs.readdirSync(reports);
+    assert.equal(files.length, 1);
+    assert.match(fs.readFileSync(path.join(reports, files[0]), 'utf8'), new RegExp(REF));
+    assert.equal(invoke('parse', archive).value.ok, true);
+    assert.deepEqual(fs.readdirSync(reports), files);
+  },
+);
+
+test(
   'dry runs expose additions and reassessment diffs without changing master',
   { skip: !pdfAvailable },
   () => {

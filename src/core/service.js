@@ -193,11 +193,12 @@ function processIsAlive(pid) {
     return error.code !== 'ESRCH';
   }
 }
-export function inspectLock({ ignoreRecovery = false } = {}) {
-  if (!ignoreRecovery && fs.existsSync(path.join(DATA, '.scupa-recovery')))
-    return { state: 'unknown', recoverable: false };
-  const file = path.join(DATA, '.scupa-lock');
-  if (!fs.existsSync(file)) return { state: 'unlocked', recoverable: false };
+const lockFile = path.join(DATA, '.scupa-lock');
+const recoveryFile = path.join(DATA, '.scupa-recovery');
+const recoveryOwner = /^\.scupa-recovery-(\d+)-[a-f0-9-]{36}$/;
+
+/** @param {string} file */
+function inspectOwner(file) {
   try {
     const value = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (!Number.isSafeInteger(value.pid) || value.pid < 1 || typeof value.startedAt !== 'string') {
@@ -205,35 +206,85 @@ export function inspectLock({ ignoreRecovery = false } = {}) {
     }
     const alive = processIsAlive(value.pid);
     return { state: alive ? 'active' : 'stale', recoverable: !alive, startedAt: value.startedAt };
-  } catch {
+  } catch (error) {
+    if (error.code === 'ENOENT') return { state: 'unlocked', recoverable: false };
     return { state: 'unknown', recoverable: false };
   }
 }
+
+/** @param {string} [ownMarker] */
+function inspectRecovery(ownMarker) {
+  try {
+    // Older builds created an ownerless file at this path. Its owner cannot be verified.
+    if (!fs.lstatSync(recoveryFile).isDirectory()) return { state: 'unknown', recoverable: false };
+    const active = fs.readdirSync(DATA).some((entry) => {
+      const match = recoveryOwner.exec(entry);
+      return match && entry !== ownMarker && processIsAlive(Number(match[1]));
+    });
+    return active ? { state: 'active', recoverable: false } : { state: 'stale', recoverable: true };
+  } catch (error) {
+    if (error.code === 'ENOENT') return { state: 'unlocked', recoverable: false };
+    return { state: 'unknown', recoverable: false };
+  }
+}
+
+export function inspectLock() {
+  const recovery = inspectRecovery();
+  return recovery.state === 'unlocked' ? inspectOwner(lockFile) : recovery;
+}
+
 export function recoverLock() {
   ensureDir(DATA);
-  const recovery = path.join(DATA, '.scupa-recovery');
-  let handle;
+  const ownerName = `.scupa-recovery-${process.pid}-${crypto.randomUUID()}`;
+  const ownerFile = path.join(DATA, ownerName);
+  const busy = () =>
+    new ScupaError('BUSY', 'Another recovery is in progress or cannot be verified.');
+  let ownsRecovery = false;
+  let recovered = false;
   try {
-    handle = fs.openSync(recovery, 'wx');
-  } catch (error) {
-    if (error.code === 'EEXIST')
-      throw new ScupaError('BUSY', 'Another recovery is already in progress.');
-    throw error;
-  }
-  try {
-    const lock = inspectLock({ ignoreRecovery: true });
-    if (lock.state === 'unlocked') return { recovered: false };
+    fs.writeFileSync(ownerFile, '', { flag: 'wx', mode: 0o600 });
+    // Publish our intent before looking for competitors. Overlapping recoveries
+    // can both yield, but cannot both pass this check. Names are never reused.
+    for (const entry of fs.readdirSync(DATA)) {
+      const match = recoveryOwner.exec(entry);
+      if (!match || entry === ownerName) continue;
+      if (processIsAlive(Number(match[1]))) throw busy();
+      fs.rmSync(path.join(DATA, entry), { force: true });
+    }
+
+    const guard = inspectRecovery(ownerName);
+    if (guard.recoverable) {
+      fs.rmdirSync(recoveryFile);
+      recovered = true;
+    } else if (guard.state !== 'unlocked') {
+      throw busy();
+    }
+
+    // Keep the original guard path so older writers also stop. The owner PID
+    // is already published in the marker name when the directory appears.
+    try {
+      fs.mkdirSync(recoveryFile);
+      ownsRecovery = true;
+    } catch (error) {
+      if (error.code === 'EEXIST') throw busy();
+      throw error;
+    }
+    const lock = inspectOwner(lockFile);
+    if (lock.state === 'unlocked') return { recovered };
     if (!lock.recoverable)
       throw new ScupaError(
         'BUSY',
         'SCUPA cannot safely release this lock. Close the other SCUPA window, then try again.',
       );
     // All writers honour the recovery guard. A new lock cannot replace this one.
-    fs.unlinkSync(path.join(DATA, '.scupa-lock'));
+    fs.unlinkSync(lockFile);
     return { recovered: true };
   } finally {
-    fs.closeSync(handle);
-    fs.unlinkSync(recovery);
+    try {
+      if (ownsRecovery) fs.rmdirSync(recoveryFile);
+    } finally {
+      fs.rmSync(ownerFile, { force: true });
+    }
   }
 }
 export function snapshot() {
@@ -269,13 +320,12 @@ export function snapshot() {
 }
 export function acquireLock() {
   ensureDir(DATA);
-  const file = path.join(DATA, '.scupa-lock');
-  const recovery = path.join(DATA, '.scupa-recovery');
-  if (fs.existsSync(recovery))
+  if (inspectRecovery().recoverable) recoverLock();
+  if (fs.existsSync(recoveryFile))
     throw new ScupaError('BUSY', 'Archive recovery is in progress. Please try again shortly.');
   try {
     fs.writeFileSync(
-      file,
+      lockFile,
       JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }),
       { flag: 'wx', mode: 0o600 },
     );
@@ -286,11 +336,11 @@ export function acquireLock() {
       'This archive is locked by another operation. Close other SCUPA windows, then open Archive help to check for an interrupted run.',
     );
   }
-  if (fs.existsSync(recovery)) {
-    fs.unlinkSync(file);
+  if (fs.existsSync(recoveryFile)) {
+    fs.unlinkSync(lockFile);
     throw new ScupaError('BUSY', 'Archive recovery is in progress. Please try again shortly.');
   }
-  return () => fs.unlinkSync(file);
+  return () => fs.unlinkSync(lockFile);
 }
 export function reparse({ dryRun = false, checkCancelled = () => {} } = {}) {
   checkCancelled();
@@ -319,6 +369,7 @@ export function reparse({ dryRun = false, checkCancelled = () => {} } = {}) {
     updated: merged.updated.length,
     changes,
     warnings: merged.warnings,
+    ...(merged.reportPending ? { reportPending: true } : {}),
     reviewRequired: result.pending.length,
     parsed: result.stats,
     dryRun,
