@@ -24,8 +24,7 @@ Open the EXE, or extract the ZIP and run `BUPA SCUPA.exe`.
 Browse saved claims offline, filter by member or status, and open the original PDFs.
 Back up your archive regularly.
 
-Version 0.3.1 includes claim details, personal follow-ups and saved views, plus
-the import and recovery improvements described below.
+SCUPA includes claim details, personal follow-ups and saved views.
 
 Select a claim to see its dates, invoice number, payment recipient, benefit category
 and current PDFs. Expand **Your follow-up** to add personal notes, the date you last
@@ -37,24 +36,23 @@ additional sorting. You can also sort with the column headings. The **Views** me
 lets you save and reuse these settings for this archive.
 **Export shown claims** exports the current results in the same order.
 
-## Version 0.3.1
+## Version 0.3.2
 
-Version **0.3.1** fixes mixed duplicate payments, session expiry between members,
-related multi-claim PDF links and changed assessment reasons. It also corrects
-labelled final invoice amounts and assessments containing several invoices, and
-recognises more readable supporting receipts and order confirmations.
+Normal sync now checks every claim missing from the verified member's archive,
+even when it predates the 14-day overlap. This patch keeps the last verified
+assessment when Bupa temporarily has no statement, excludes incomplete downloads
+from assessments and uses final amounts for multi-invoice reassessments.
 
 Recognised Bupa statements import automatically. Interrupted PDF downloads can
 resume for 24 hours, and only documents needing attention are held back.
-This is a stable release. The binaries are unsigned, and a fresh packaged live
-sync remains an outstanding acceptance check. See the
-[release notes](https://github.com/alanmosely/bupa-scupa/releases/tag/v0.3.1).
+The binaries are unsigned, and a fresh packaged live sync remains outstanding.
+See the [release notes](https://github.com/alanmosely/bupa-scupa/releases/tag/v0.3.2).
 
 Version-specific downloads:
-[portable EXE](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.1/bupa-scupa-x64.exe),
-[application ZIP](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.1/bupa-scupa-0.3.1-x64.zip),
-[source](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.1/bupa-scupa-0.3.1-source.zip),
-and [checksums](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.1/SHA256SUMS.txt).
+[Portable EXE](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.2/bupa-scupa-x64.exe),
+[Application ZIP](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.2/bupa-scupa-0.3.2-x64.zip),
+[Corresponding source](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.2/bupa-scupa-0.3.2-source.zip),
+and [SHA-256 checksums](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.2/SHA256SUMS.txt).
 
 ## Updating an existing archive
 

@@ -10,6 +10,7 @@ import {
   resolveClaimPdf,
   currentClaimFiles,
   documentReviews,
+  hasSupportingReview,
 } from './documents.js';
 import { emptyFollowUp, queryClaims, assessmentKey, assessmentReviewed } from './claims.js';
 import { loadWorkspace, storeFollowUp, saveView, removeView } from './workspace.js';
@@ -94,7 +95,7 @@ export function archiveHelp() {
       try {
         const absolute = reviewedDocumentPath(document);
         const reviews = documentReviews(path.dirname(absolute));
-        const supporting = reviews.supporting[path.basename(absolute)]?.sha256 === document.sha256;
+        const supporting = !document.readable && hasSupportingReview(reviews, document.sha256);
         const assessment = reviews.assessments[path.basename(absolute)]?.sha256 === document.sha256;
         documents.push({
           file: document.file,
@@ -167,6 +168,11 @@ export function reviewDocument({ file, sha256, classification }) {
   const name = path.basename(absolute);
   delete reviews.supporting[name];
   delete reviews.assessments[name];
+  if (classification === null) {
+    for (const [reviewedName, entry] of Object.entries(reviews.supporting)) {
+      if (entry.sha256 === sha256) delete reviews.supporting[reviewedName];
+    }
+  }
   if (classification !== null)
     reviews[classification === 'supporting' ? 'supporting' : 'assessments'][name] = {
       sha256,

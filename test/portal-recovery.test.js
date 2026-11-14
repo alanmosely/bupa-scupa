@@ -10,8 +10,14 @@ fs.mkdirSync('.cache/tests', { recursive: true });
 process.env.SCUPA_DATA_DIR = fs.mkdtempSync(path.resolve('.cache/tests/portal-recovery-'));
 const { fetchHousehold } = await import('../src/core/portal.js');
 const { saveConfig, MASTER, RAW, atomicWrite } = await import('../src/core/util.js');
+const { parseRawDir } = await import('../src/core/parse.js');
+const { loadMaster, mergeRecords } = await import('../src/core/merge.js');
+const OLDER_UNSEEN = 'CL000101000003';
 
-function fixture(expiry, { unknownMember = false, wrongRecovery = false, cancel = false } = {}) {
+function fixture(
+  expiry,
+  { unknownMember = false, wrongRecovery = false, cancel = false, olderUnseen = false } = {},
+) {
   saveConfig({
     schemaVersion: 1,
     baseUrl: BUPA_ORIGIN,
@@ -29,7 +35,15 @@ function fixture(expiry, { unknownMember = false, wrongRecovery = false, cancel 
         claim_ref,
         member: index ? 'second' : 'holder',
         received_date: '2000-01-01',
-        status: CLAIM_STATUS.awaiting,
+        ...(olderUnseen && claim_ref === REF
+          ? {
+              status: CLAIM_STATUS.paid,
+              currency: 'GBP',
+              paid_currency: 'GBP',
+              claimed: '80.0',
+              paid: '80.0',
+            }
+          : { status: CLAIM_STATUS.awaiting }),
       })),
       HEADERS,
     ),
@@ -45,6 +59,7 @@ function fixture(expiry, { unknownMember = false, wrongRecovery = false, cancel 
     closed = false,
     signIns = 0;
   const confirmations = [];
+  const detailRequests = [];
   const page = {
     url: () => url,
     isClosed: () => false,
@@ -78,15 +93,17 @@ function fixture(expiry, { unknownMember = false, wrongRecovery = false, cancel 
             return { status: 401, url: BUPA_ORIGIN + argument, html: '' };
           }
           const claimId = selected === 'holder' || (wrongRecovery && signIns) ? REF : OTHER;
+          const refs = claimId === REF && olderUnseen ? [REF, OLDER_UNSEEN] : [claimId];
           return {
             status: 200,
             url: BUPA_ORIGIN + argument,
-            html: JSON.stringify([{ claimId, recievedDate: '01/01/2000' }]),
+            html: JSON.stringify(refs.map((claimId) => ({ claimId, recievedDate: '01/01/2000' }))),
           };
         }
+        detailRequests.push(new URL(argument, BUPA_ORIGIN).searchParams.get('claimId'));
         return { status: 200, url: BUPA_ORIGIN + argument, html: 'no attachments' };
       }
-      if (argument === 'no attachments') return [];
+      if (argument?.html === 'no attachments') return [];
       if (typeof argument === 'string') return JSON.parse(argument);
       return [
         { href: '/plan', text: 'Manage Plan' },
@@ -131,6 +148,8 @@ function fixture(expiry, { unknownMember = false, wrongRecovery = false, cancel 
         }
       },
     },
+    detailRequests,
+    confirmations,
     verify() {
       assert.equal(expired, true);
       assert.equal(signIns, 1);
@@ -164,4 +183,27 @@ test('manual sign-in recovery between members remains cancellable', async () => 
   const trial = fixture('between-members', { cancel: true });
   await assert.rejects(fetchHousehold(trial.options), { code: 'CANCELLED' });
   trial.verify();
+});
+
+test('normal sync archives an older untracked reference only after verifying the member', async () => {
+  const trial = fixture(null, { olderUnseen: true });
+  await fetchHousehold(trial.options);
+  assert.deepEqual(trial.detailRequests, [OLDER_UNSEEN, OTHER]);
+  assert.deepEqual(trial.confirmations, []);
+
+  const before = loadMaster().find((row) => row.claim_ref === REF);
+  const parsed = parseRawDir({ extractText: () => assert.fail('No PDFs were returned') });
+  assert.deepEqual(parsed.fatalErrors, []);
+  const result = mergeRecords(parsed.records);
+  assert.deepEqual(
+    result.added.map((row) => row.claim_ref),
+    [OLDER_UNSEEN],
+  );
+  const after = loadMaster();
+  assert.deepEqual(
+    after.find((row) => row.claim_ref === REF),
+    before,
+  );
+  assert.equal(after.find((row) => row.claim_ref === OLDER_UNSEEN)?.member, 'holder');
+  assert.equal(after.find((row) => row.claim_ref === OLDER_UNSEEN)?.status, CLAIM_STATUS.awaiting);
 });

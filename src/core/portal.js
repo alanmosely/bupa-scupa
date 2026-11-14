@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { launchInstalledBrowser } from './browser.js';
 import {
   RAW,
@@ -25,6 +26,7 @@ import { BUPA_ORIGIN } from './model.js';
 import { discoverHousehold, memberCardName } from './discovery.js';
 import { setup, pendingClaims } from './service.js';
 import { downloadProgress } from './download-progress.js';
+import { currentClaimFiles } from './documents.js';
 
 const ORIGIN = BUPA_ORIGIN;
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -190,7 +192,7 @@ async function attachments(page, claim) {
     '/api/sitecore/Plan/GetClaimDetails?' + new URLSearchParams(claim),
     'claim details',
   );
-  return page.evaluate((html) => {
+  const readDetails = ({ html, claimId }) => {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const result = new Map();
     for (const a of doc.querySelectorAll('a[href*="/api/sitecore/Plan/DownloadFile"]')) {
@@ -214,15 +216,39 @@ async function attachments(page, claim) {
       if (/invoice|receipt/i.test(label)) kind = 'supporting';
       result.set(key, { href: url.href, kind, label });
     }
+    if (result.size) return [...result.values()];
+
+    const text = (el) => (el.textContent || '').replace(/\s+/g, ' ').trim();
+    const headings = [...doc.querySelectorAll('h2')].map(text);
+    const paragraphs = [...doc.querySelectorAll('p')].map(text);
+    // Bupa can accept a claim for payment before it publishes the statement.
+    if (
+      doc.body.textContent?.match(/CL\d{12}(?!\d)/g)?.includes(claimId) &&
+      headings.some((heading) => /^claim documents$/i.test(heading)) &&
+      headings.some((heading) => /^your claim statement will be\b/i.test(heading)) &&
+      paragraphs.some((paragraph) => /^unavailable$/i.test(paragraph)) &&
+      paragraphs.some((paragraph) => /^please check back later[.!]?$/i.test(paragraph))
+    )
+      return null;
+
     const explicitlyEmpty = [...doc.querySelectorAll('p, div, span')].some((el) =>
       /^(?:claim details:\s*)?no (?:attachments|documents)(?: (?:available|found|to display))?[.!]?$/i.test(
-        (el.textContent || '').replace(/\s+/g, ' ').trim(),
+        text(el),
       ),
     );
-    if (!result.size && !explicitlyEmpty)
-      throw new Error('Bupa returned unfamiliar claim details. No documents have been imported.');
-    return [...result.values()];
-  }, html);
+    if (explicitlyEmpty) return [];
+    return undefined;
+  };
+  const details = await page.evaluate(readDetails, { html, claimId: claim.claimId });
+  if (details === undefined)
+    throw Object.assign(
+      new ScupaError(
+        'PORTAL_CHANGED',
+        'Bupa returned unfamiliar claim details. Sync stopped before merging claims.',
+      ),
+      { retryable: false },
+    );
+  return details;
 }
 
 /**
@@ -242,12 +268,12 @@ export async function downloadPdf(page, context, href, options = {}) {
       { retryable: false },
     );
   const limit = 64 * 1024 * 1024;
+  const tooLarge = () =>
+    Object.assign(new ScupaError('INVALID_DOWNLOAD', 'Document exceeds the 64 MB safety limit.'), {
+      retryable: false,
+    });
   const inspect = (body, metadata, transport) => {
-    if (body.length > limit)
-      throw Object.assign(
-        new ScupaError('INVALID_DOWNLOAD', 'Document exceeds the 64 MB safety limit.'),
-        { retryable: false },
-      );
+    if (body.length > limit) throw tooLarge();
     const details = describeDownload(body, metadata.status, metadata.contentType);
     try {
       validatePdf(body);
@@ -277,6 +303,7 @@ export async function downloadPdf(page, context, href, options = {}) {
       contentType: headers['content-type'] || '',
     };
     validatePortalResponse(metadata, 'document download');
+    if (Number(headers['content-length']) > limit) throw tooLarge();
     const body = await response.body();
     if (!inspect(body, metadata, 'request-context')) return body;
   } finally {
@@ -291,7 +318,16 @@ export async function downloadPdf(page, context, href, options = {}) {
         cache: 'no-store',
         signal: AbortSignal.timeout(30000),
       });
-      if (Number(response.headers.get('content-length')) > limit) return { tooLarge: true };
+      const metadata = {
+        status: response.status,
+        url: response.url || href,
+        retryAfter: response.headers.get('retry-after'),
+        contentType: response.headers.get('content-type') || '',
+        loginPage: response.type === 'opaqueredirect',
+      };
+      if (!response.ok) return { ...metadata, tooLarge: false, base64: '' };
+      if (Number(response.headers.get('content-length')) > limit)
+        return { ...metadata, tooLarge: true, base64: '' };
       const reader = response.body?.getReader();
       const chunks = [];
       let length = 0;
@@ -302,7 +338,7 @@ export async function downloadPdf(page, context, href, options = {}) {
           length += value.length;
           if (length > limit) {
             await reader.cancel();
-            return { tooLarge: true };
+            return { ...metadata, tooLarge: true, base64: '' };
           }
           chunks.push(value);
         }
@@ -312,23 +348,15 @@ export async function downloadPdf(page, context, href, options = {}) {
         for (let i = 0; i < chunk.length; i += 32768)
           binary += String.fromCharCode(...chunk.subarray(i, i + 32768));
       return {
+        ...metadata,
         tooLarge: false,
         base64: window.btoa(binary),
-        status: response.status,
-        url: response.url || href,
-        retryAfter: response.headers.get('retry-after'),
-        contentType: response.headers.get('content-type') || '',
-        loginPage: response.type === 'opaqueredirect',
       };
     },
     { href, limit },
   );
-  if (result.tooLarge)
-    throw Object.assign(
-      new ScupaError('INVALID_DOWNLOAD', 'Document exceeds the 64 MB safety limit.'),
-      { retryable: false },
-    );
   validatePortalResponse(result, 'browser document download');
+  if (result.tooLarge) throw tooLarge();
   const body = Buffer.from(result.base64, 'base64');
   const invalid = inspect(body, result, 'browser-fetch');
   if (invalid)
@@ -342,7 +370,7 @@ export async function downloadPdf(page, context, href, options = {}) {
   return body;
 }
 
-async function waitForLogin(page, signal) {
+async function waitForLogin(page, signal, onRetry) {
   const deadline = Date.now() + 10 * 60 * 1000;
   while (Date.now() < deadline) {
     check(signal);
@@ -353,19 +381,26 @@ async function waitForLogin(page, signal) {
       );
     try {
       if (new URL(page.url()).origin === ORIGIN) {
-        await portalList(page);
+        await retry(() => portalList(page), { attempts: 4, delayMs: 2000, signal, onRetry });
         return;
       }
-    } catch {
+    } catch (error) {
+      check(signal);
+      if (error.code === 'BUPA_RATE_LIMITED' || error.code === 'BUPA_REQUEST_FAILED') throw error;
       /* Login and MFA are performed by the human. */
     }
-    await pause(2500);
+    await sleep(2500, undefined, { signal });
   }
   throw new ScupaError('LOGIN_TIMEOUT', 'Login timed out after 10 minutes. Start sync again.');
 }
-export function selectClaims(claims, since, awaiting = new Set(), fullRefresh = false) {
+/** @param {{claimId: string, recievedDate: string}[]} claims @param {{since: string, archived: ReadonlySet<string>, awaiting?: ReadonlySet<string>, fullRefresh?: boolean}} options */
+export function selectClaims(claims, { since, archived, awaiting, fullRefresh = false }) {
   return claims.filter(
-    (claim) => fullRefresh || claim.claimId.slice(2, 8) >= since || awaiting.has(claim.claimId),
+    ({ claimId }) =>
+      fullRefresh ||
+      !archived.has(claimId) ||
+      claimId.slice(2, 8) >= since ||
+      awaiting?.has(claimId),
   );
 }
 
@@ -382,6 +417,12 @@ export async function fetchHousehold({
   if (cfg.baseUrl !== ORIGIN)
     throw new ScupaError('INVALID_CONFIG', 'SCUPA supports Bupa Global MembersWorld only.');
   check(signal);
+  const masterRows = loadMaster();
+  const onRetry = (error, delay) =>
+    emit({
+      phase: 'download',
+      message: `Bupa ${error.code === 'BUPA_RATE_LIMITED' ? 'is limiting requests' : 'is temporarily unavailable'}. Waiting ${Math.ceil(delay / 1000)} seconds before retrying…`,
+    });
   const browser = await launchBrowser({
     headless: false,
     args: ['--disable-blink-features=AutomationControlled', '--disable-save-password-bubble'],
@@ -402,7 +443,7 @@ export async function fetchHousehold({
         : 'Sign in to Bupa in the browser window, including MFA. Keep it open.',
     });
     await page.goto(ORIGIN + '/my-claims', { waitUntil: 'domcontentloaded' }).catch(() => {});
-    await waitForLogin(page, signal);
+    await waitForLogin(page, signal, onRetry);
     const discovered = !Object.keys(cfg.members).length;
     if (discovered) {
       emit({ phase: 'setup', message: 'Reading your household from Bupa…' });
@@ -422,7 +463,7 @@ export async function fetchHousehold({
     const byMember = {};
     const latest = {};
     const stubs = {};
-    for (const row of loadMaster()) {
+    for (const row of masterRows) {
       (byMember[row.member] ??= new Set()).add(row.claim_ref);
       if (!latest[row.member] || row.claim_ref > latest[row.member])
         latest[row.member] = row.claim_ref;
@@ -436,17 +477,15 @@ export async function fetchHousehold({
       emit({ phase: 'member', message: `Checking ${member.displayName}…` });
       // Selection, verification and confirmation can expire just like downloads.
       // Always restore and verify this member before retrying any operation.
+      /** @template T @param {() => Promise<T>} operation @param {string | null} [claimId] */
+      /** @template T @param {() => Promise<T>} operation @param {string | null} [claimId] */
       const request = async (operation, claimId = null) => {
         const attempt = () =>
           retry(operation, {
             attempts: 4,
             delayMs: 2000,
             signal,
-            onRetry: (error, delay) =>
-              emit({
-                phase: 'download',
-                message: `Bupa ${error.code === 'BUPA_RATE_LIMITED' ? 'is limiting requests' : 'is temporarily unavailable'}. Waiting ${Math.ceil(delay / 1000)} seconds before retrying…`,
-              }),
+            onRetry,
           });
         try {
           return await attempt();
@@ -460,7 +499,7 @@ export async function fetchHousehold({
           });
           check(signal);
           await page.goto(ORIGIN + '/my-claims', { waitUntil: 'domcontentloaded', timeout: 30000 });
-          await waitForLogin(page, signal);
+          await waitForLogin(page, signal, onRetry);
           if (!member.self) await selectMember(page, member);
           const resumed = await retry(() => portalList(page), { signal });
           verifyMemberRefs(
@@ -523,9 +562,11 @@ export async function fetchHousehold({
           saveConfig(cfg);
         }
       }
+      // Keep the archive's references separate from the verified portal list used for recovery.
+      const archived = byMember[id] ?? new Set();
       byMember[id] = new Set(all.map((c) => c.claimId));
       const since = fullRefresh ? '000000' : sinceFromRef(latest[id], 14);
-      const selected = selectClaims(all, since, stubs[id], fullRefresh);
+      const selected = selectClaims(all, { since, archived, awaiting: stubs[id], fullRefresh });
       /** @type {{member: string, since: string, exportedAt: string, claims: Array<{claimId: string, recievedDate: string, files: string[]}>}} */
       const manifest = { member: id, since, exportedAt: new Date().toISOString(), claims: [] };
       for (const [index, claim] of selected.entries()) {
@@ -539,6 +580,23 @@ export async function fetchHousehold({
         const attachmentsFound = await request(() => attachments(page, claim), claim.claimId);
         const directory = path.join(RAW, id, claim.claimId);
         ensureDir(directory);
+        if (fs.lstatSync(directory).isSymbolicLink())
+          throw new Error('Linked download folders are not supported.');
+        const current = path.join(directory, 'current.json');
+        let previous;
+        try {
+          previous = currentClaimFiles(directory);
+        } catch {
+          throw new ScupaError(
+            'PARSE_FAILED',
+            'An archived claim has invalid current.json metadata. Recheck saved PDFs for details. The master records have been kept.',
+          );
+        }
+        if (attachmentsFound === null) {
+          // A pending statement can be temporary. Keep the last known selection.
+          manifest.claims.push({ ...claim, files: previous });
+          continue;
+        }
         const saved = [];
         const counts = { statement: 0, supporting: 0, form: 0 };
         const files = attachmentsFound
@@ -551,6 +609,13 @@ export async function fetchHousehold({
               filename: `${file.kind}_${counts[file.kind]}_${file.label}.pdf`,
             };
           });
+        if (files.length && !fs.existsSync(current)) {
+          // Freeze the legacy selection before adding any uncommitted PDFs.
+          atomicWrite(
+            current,
+            JSON.stringify({ schemaVersion: 1, files: previous, legacy: true }, null, 2),
+          );
+        }
         const progress = downloadProgress(directory, files, {
           lastSync: cfg.lastSync,
           fullRefresh,
@@ -604,7 +669,7 @@ export async function fetchHousehold({
               });
               check(signal);
               const name = archivePdf(directory, file.filename, body);
-              progress.save(file, name);
+              progress.save(file, name, body);
               return name;
             }, claim.claimId),
           );
@@ -612,10 +677,7 @@ export async function fetchHousehold({
         check(signal);
         // Commit only a complete claim download. Older PDFs remain in the archive,
         // but must not override a revision the portal has since restored or removed.
-        atomicWrite(
-          path.join(directory, 'current.json'),
-          JSON.stringify({ schemaVersion: 1, files: saved }, null, 2),
-        );
+        atomicWrite(current, JSON.stringify({ schemaVersion: 1, files: saved }, null, 2));
         manifest.claims.push({ ...claim, files: saved });
       }
       ensureDir(path.join(RAW, id));
@@ -623,6 +685,9 @@ export async function fetchHousehold({
       summaries.push({ member: id, claims: selected.length });
     }
     return summaries;
+  } catch (error) {
+    check(signal);
+    throw error;
   } finally {
     signal?.removeEventListener('abort', onAbort);
     await browser.close();

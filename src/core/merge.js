@@ -17,6 +17,11 @@ import {
 const STATUS_CANON = new Map(
   Object.values(CLAIM_STATUS).map((status) => [status.toLowerCase(), status]),
 );
+const validAmount = (value) =>
+  typeof value === 'string' &&
+  /^-?\d+(?:\.\d{1,2})?$/.test(value) &&
+  Number.isSafeInteger(Math.round(Number(value) * 100));
+const validCurrency = (value) => value === 'GBP' || value === 'EUR';
 
 export function normalizeRow(row) {
   // Earlier previews stored one currency for both amounts.
@@ -40,7 +45,21 @@ export function loadMaster(masterPath = MASTER) {
   ];
   if (!supported.some((fields) => header === fields.join(',')))
     throw new Error('Unexpected master CSV schema. Records have not been changed.');
-  return parseCsv(text).map(normalizeRow);
+  const rows = parseCsv(text).map(normalizeRow);
+  for (const row of rows) {
+    if (
+      [
+        [row.claimed, row.currency],
+        [row.paid, row.paid_currency],
+      ].some(([amount, currency]) =>
+        amount === ''
+          ? currency !== '' && !validCurrency(currency)
+          : !validAmount(amount) || !validCurrency(currency),
+      )
+    )
+      throw new Error('Invalid amount or currency in master CSV. Records have not been changed.');
+  }
+  return rows;
 }
 
 const isStubStatus = (s) => /^no statement in portal/i.test(s || '');
@@ -64,9 +83,6 @@ function assessmentNotes(notes = '') {
   if (latest) return JSON.parse(latest[1]);
   return notes.split(/(?:^| \| )(?:reassessed|statement arrived) \d{4}-\d{2}-\d{2}\b/)[0];
 }
-const validAmount = (value) =>
-  typeof value === 'string' && /^-?\d+(?:\.\d+)?$/.test(value) && Number.isFinite(Number(value));
-
 export function mergeRecords(
   records,
   { masterPath = MASTER, reportsDir = REPORTS, dryRun = false } = {},
@@ -107,8 +123,8 @@ export function mergeRecords(
       (!rec.stub &&
         (!validAmount(rec.claimed) ||
           !validAmount(rec.paid) ||
-          !['GBP', 'EUR'].includes(rec.currency) ||
-          !['GBP', 'EUR'].includes(rec.paid_currency)))
+          !validCurrency(rec.currency) ||
+          !validCurrency(rec.paid_currency)))
     ) {
       throw new Error(`Invalid parsed claim ${rec.claim_ref} — refusing to rewrite master`);
     }

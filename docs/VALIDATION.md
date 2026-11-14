@@ -1,5 +1,27 @@
 # Validation
 
+## Version 0.3.2 candidate — 13 November 2026
+
+All 127 automated tests pass on Windows 11 x64, build 26300, with PDF extraction
+and FFmpeg source checks required. The incremental sync regression verifies an
+untracked claim outside the overlap is requested after member verification,
+imported as awaiting when it has no statement, and does not rewrite an existing
+assessment. The foreign-member refusal remains covered.
+
+Tests also cover padded multi-invoice reassessments, malformed payment totals,
+current-file metadata, paused or cancelled sign-in checks, short-lived download
+checkpoints, archived PDF revisions and byte-identical receipt reviews. The
+synthetic portal checks exercise temporarily unavailable statements, recovery,
+a 100-claim rate-limited import and preservation of existing payments and PDFs.
+The development and packaged desktop, native agent startup, extracted and
+portable agent, and cancellation checks pass. Three pairs of concurrent portable
+launches used separate runtime folders. The source and application ZIPs, bundled
+notices, PDF reader and FFmpeg provenance, and release checksums pass release
+inspection. The dependency audit reports zero vulnerabilities.
+
+No fresh-machine or live end-to-end sync was performed for this candidate. The
+Windows binaries are unsigned. See [release notes](RELEASE_NOTES_0.3.2.md).
+
 ## Version 0.3.1 — 23 October 2026
 
 The stable release combines the four assessment/session review fixes and the
