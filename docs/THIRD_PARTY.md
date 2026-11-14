@@ -55,6 +55,17 @@ and undici 6.29.1/7.30.1 for newly reported advisories. See the
 [undici advisory](https://github.com/advisories/GHSA-4qv8-2p9j-2685).
 These retain their package licences; the complete dependency audit is clear.
 
+## Build tool security updates — 13 November 2026
+
+The lockfile updates the ASAR inspection tool and ESLint, and pins patched
+versions of minimatch and Electron Universal in the Windows build tool's
+transitive dependencies. These changes address the
+[glob](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4) and
+[minimatch](https://github.com/advisories/GHSA-g3hv-75wg-m249) advisories. These
+build packages retain their MIT or Blue Oak licences and are not shipped in the
+app. The packaged npm runtime dependency remains Playwright Core 1.63.0.
+Electron, FFmpeg and Xpdf versions and source pins are unchanged.
+
 ## Browser dependency
 
 Sync uses installed Edge, falling back to Chrome, through

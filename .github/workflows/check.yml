@@ -1,5 +1,11 @@
 name: Checks
-on: [push, pull_request]
+on:
+  push:
+    branches-ignore:
+      - 'dependabot/**'
+    tags:
+      - '**'
+  pull_request:
 permissions:
   contents: read
 jobs:
