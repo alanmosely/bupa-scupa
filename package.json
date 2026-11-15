@@ -36,13 +36,13 @@
   "devDependencies": {
     "@electron/asar": "4.3.2",
     "@eslint/js": "10.0.1",
-    "@types/node": "24.19.1",
+    "@types/node": "24.19.2",
     "ajv": "8.20.0",
     "electron": "44.9.3",
-    "electron-builder": "26.15.3",
+    "electron-builder": "26.18.0",
     "eslint": "10.15.0",
-    "prettier": "3.9.9",
-    "tar": "7.5.22",
+    "prettier": "3.10.1",
+    "tar": "7.5.23",
     "typescript": "7.0.2",
     "yauzl": "3.4.0",
     "yazl": "3.3.1"
