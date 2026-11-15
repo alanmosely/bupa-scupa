@@ -51,3 +51,21 @@ and [minimatch](https://github.com/advisories/GHSA-g3hv-75wg-m249) advisories.
 The Windows binaries are unsigned. A fresh Windows installation and a new live
 end-to-end household sync were not tested. The app requires Windows 10/11 x64
 and installed Edge or Chrome. Keep your archive private.
+
+## Post-release source fixes — 14 November 2026
+
+The following changes were developed after the published 0.3.2 release. The
+0.3.2 downloads linked above do not contain these later fixes.
+
+- Padded claim headings keep each claim's amounts separate. Invalid claim
+  references, malformed benefit amounts and inconsistent conversion summaries
+  require review instead of importing partial totals.
+- Missing assessed amounts or invalid stored statuses block archive updates.
+  Linked archive folders and CSV export paths cannot bypass the archive's file
+  boundaries. Legacy PDF selections reject non-file entries and malformed metadata.
+- Rate limits during member-page navigation use cancellable retries and respect
+  server cooldowns, extending the sign-in retry handling in the published release.
+
+The local follow-up passed 139 automated tests and packaged checks before
+integration with subsequent upstream changes. See [validation evidence](VALIDATION.md)
+for the dated scope of those checks and the outstanding acceptance limitations.

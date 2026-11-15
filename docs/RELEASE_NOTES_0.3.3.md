@@ -1,7 +1,8 @@
 # BUPA SCUPA 0.3.3
 
-This patch fixes interrupted archive recovery and preserves change reports when
-their destination cannot be written after claims have already been saved.
+This patch fixes archive recovery, statement validation, portal retries and
+archive file boundaries. It preserves change reports when their destination
+cannot be written after claims have already been saved.
 
 - **Recover interrupted run** can recover a recovery attempt that stopped
   unexpectedly, once its owner is confirmed to have stopped. Active operations
@@ -12,6 +13,14 @@ their destination cannot be written after claims have already been saved.
 - Agent responses expose `reportPending` alongside the successful result. Dry
   runs do not write or retry pending reports. Failures before the master commit
   preserve the previous CSV.
+- Padded claim headings keep each claim's amounts separate. Invalid claim
+  references, malformed benefit amounts and inconsistent currency-conversion
+  summaries require review instead of importing partial totals.
+- Missing assessed amounts and invalid stored statuses block archive updates.
+  Linked archive folders, PDFs and CSV export paths cannot bypass archive file
+  boundaries, including during downloads and zero-claim manifest updates.
+- Member-page navigation retries HTTP 429 and temporary server errors, respects
+  server cooldowns and remains cancellable. Login and MFA stay manual.
 
 ## Upgrade and recovery
 
@@ -31,6 +40,12 @@ No manual CSV or household-settings migration is needed. Finish pending report
 recovery before returning to an older application version. Reports already lost
 by a previous version cannot be recreated by this patch.
 
+Use **Recheck saved PDFs** to apply the statement fixes offline. Files with
+invalid amounts remain in **Archive help** for review. Linked archive folders or
+PDFs are refused: keep the archive in a private, regular directory with regular
+files, outside the development checkout. Existing PDFs and personal notes are
+preserved; do not guess amounts or statuses to bypass a validation error.
+
 ## Release assets
 
 - `bupa-scupa-x64.exe`: portable application.
@@ -40,12 +55,13 @@ by a previous version cannot be recreated by this patch.
 
 ## Validation and limits
 
-The archive fixes passed 131 automated tests, desktop and synthetic portal
-checks, packaged and portable agent checks, and release-artifact validation on
-the full Windows pipeline before this release preparation. Independent synthetic
-fault tests also verified seven process-interruption and write-failure scenarios.
-The versioned release artifacts require the same complete Windows validation;
-the release's GitHub Actions run records the final result.
+The combined fixes passed 143 automated tests with PDF extraction and FFmpeg
+source checks required, source checks and both development desktop smokes.
+Independent synthetic fault tests also verified seven process-interruption and
+write-failure scenarios for the report journal. The versioned release artifacts
+require the complete Windows build, synthetic portal checks, packaged and
+portable agent checks, and release-artifact validation; the release's GitHub
+Actions run records the final result.
 
 Dependencies, bundled runtime and PDF reader versions, source pins and notices
 are unchanged. The Windows binaries are unsigned. A fresh Windows installation

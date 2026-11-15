@@ -17,19 +17,22 @@ function readMetadata(file) {
 }
 
 export function currentClaimFiles(directory) {
+  if (fs.lstatSync(directory).isSymbolicLink())
+    throw new Error('Linked archive directories are not supported.');
   const manifest = path.join(directory, 'current.json');
   const stat = fs.lstatSync(manifest, { throwIfNoEntry: false });
   // Older interrupted runs could write a checkpoint before their first selection.
   if (!stat && fs.existsSync(path.join(directory, 'download-progress.json'))) return [];
-  const files = fs
-    .readdirSync(directory, { withFileTypes: true })
-    .filter((file) => file.isFile() && file.name.toLowerCase().endsWith('.pdf'))
-    .map((file) => file.name);
+  const entries = fs.readdirSync(directory, { withFileTypes: true });
+  const pdfs = entries.filter((file) => file.name.toLowerCase().endsWith('.pdf'));
+  if (pdfs.some((file) => !file.isFile())) throw new Error('Archived PDFs must be regular files.');
+  const files = pdfs.map((file) => file.name);
   if (!stat) return files;
   if (!stat.isFile()) throw new Error('current.json must be a regular file');
   const current = readMetadata(manifest);
   if (
     current?.schemaVersion !== 1 ||
+    (current.legacy !== undefined && typeof current.legacy !== 'boolean') ||
     !Array.isArray(current.files) ||
     new Set(current.files).size !== current.files.length ||
     current.files.some((file) => !files.includes(file))

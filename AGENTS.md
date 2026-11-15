@@ -11,6 +11,10 @@ AGENT_API.md and use the supported API rather than editing records directly.
 - Never commit an archive, household config, portal capture or real statement.
   Fixtures must be synthetic. Only synthetic references beginning CL000101 are
   permitted in public fixtures and examples.
+- Keep real household records outside the development checkout, including in
+  ignored caches, logs, screenshots, exports, and build artifacts. Use synthetic
+  archives for development and acceptance tests. If a live check is explicitly
+  requested, keep its archive and diagnostic output in the private data folder.
 - Keep core logic shared by GUI and CLI. Keep the JSON envelope versioned.
 - Keep published JSON Schemas and contract tests aligned. Agent events must
   expose control state only, never portal text, claim references or names.

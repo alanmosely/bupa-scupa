@@ -48,7 +48,10 @@ export function loadMaster(masterPath = MASTER) {
     throw new Error('Unexpected master CSV schema. Records have not been changed.');
   const rows = parseCsv(text).map(normalizeRow);
   for (const row of rows) {
+    if (!STATUS_CANON.has(row.status.toLowerCase()))
+      throw new Error('Invalid status in master CSV. Records have not been changed.');
     if (
+      (row.status !== CLAIM_STATUS.awaiting && (!row.claimed || !row.paid)) ||
       [
         [row.claimed, row.currency],
         [row.paid, row.paid_currency],

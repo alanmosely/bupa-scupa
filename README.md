@@ -43,6 +43,10 @@ change report cannot be written after claims are saved, SCUPA now confirms the
 saved changes and retains the report for a later retry. Rechecking saved PDFs
 recovers that report without importing the same claims again.
 
+Statement parsing keeps padded claim headings separate and refuses malformed
+amounts or inconsistent conversion totals. Member-page navigation uses
+cancellable retries, and linked files or folders cannot bypass archive boundaries.
+
 Back up the entire archive and close SCUPA before replacing the application.
 Older recovery guards without owner information still require the documented
 manual recovery. The binaries are unsigned, and a fresh packaged live sync

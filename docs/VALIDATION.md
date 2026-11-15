@@ -2,23 +2,60 @@
 
 ## Version 0.3.3 release preparation — 15 November 2026
 
-This release contains the archive lock-recovery and pending-report fixes merged
-in PR 24. The fixed source passed all 131 automated tests with PDF extraction and
-FFmpeg source required, the full Windows packaged validation, and an independent
-review on 14 November. Seven additional synthetic process-interruption and
-write-error scenarios recovered one report per change without duplicate claims.
+This release combines the archive lock-recovery and pending-report fixes from
+PR 24 with the statement-validation, portal-retry and archive-boundary fixes in
+commit `21f3644`. The integrated source passed all 143 automated tests with PDF
+extraction and FFmpeg source required, source checks and both development desktop
+smokes, as recorded below. The earlier independent recovery review also verified
+seven synthetic interruption and write-error scenarios without duplicate claims.
 
-Compared with merged fix commit `9b34d42`, this release preparation changes only
-metadata and documentation. Its final artifacts
-must pass the full Windows validation workflow, including desktop and synthetic
-portal checks, packaged and portable agents, startup, cancellation, overlapping
-portable invocations and exact release-content checks. The published release
-links its final workflow and checksum manifest.
+Release preparation changes metadata and documentation on top of that integrated
+source. Its final artifacts must pass the complete Windows validation workflow,
+including desktop and synthetic portal checks, packaged and portable agents,
+startup, cancellation, overlapping portable invocations and exact release-content
+checks. The published release links its final workflow and checksum manifest.
 
 The maintainer authorised publication of these fixes on 15 November with the
 previously disclosed live-sync limitation still outstanding. No fresh packaged
 live household sync or fresh-machine check is claimed. Binaries remain unsigned.
 See the [release and upgrade notes](RELEASE_NOTES_0.3.3.md).
+
+## Integrated source checks — 15 November 2026
+
+The follow-up fixes were combined with the upstream archive-lock and pending
+change-report recovery changes. All 143 automated tests passed on Windows 11
+x64 with PDF extraction and FFmpeg source checks required, with no skipped tests.
+Source and staged-file privacy checks, lint, types, formatting, and both
+development desktop smoke suites passed using synthetic archives.
+
+This validates the combined source. No new binaries were built or published for
+this integration. The earlier packaged checks below apply to their dated source
+snapshots. Fresh-machine and live end-to-end household acceptance remain untested.
+
+## Local follow-up checks — 14 November 2026, before integration
+
+All 139 automated tests passed on Windows 11 x64, build 26300, with PDF extraction
+and FFmpeg source checks required and no skipped tests. This evidence applies to
+the local follow-up source and binaries before integration with the later upstream
+archive-lock and report-recovery changes. It does not describe the published
+0.3.2 downloads or validate the combined source after integration.
+
+The follow-up review adds regressions for padded or invalid claim headings,
+malformed claimed amounts and conversion summaries, missing assessed amounts,
+invalid master statuses, navigation cooldowns and cancellation, and linked
+archive paths. Linked-folder checks cover parsing, CSV export, downloads and
+zero-claim manifest writes. The existing incremental sync, statement recovery,
+reassessment, receipt review and cross-member ownership regressions also passed.
+
+The development and packaged desktop, synthetic portal, native agent startup,
+extracted and portable agent, and cancellation checks passed. Three pairs of
+concurrent portable launches used separate runtime folders. The source and
+application ZIPs, bundled notices, PDF reader and FFmpeg provenance, and release
+checksums passed local release inspection. The dependency audit reported zero
+vulnerabilities. These local artifacts were not published.
+
+No fresh-machine or live end-to-end sync was performed. The local Windows
+binaries are unsigned. See the [post-release source fixes](RELEASE_NOTES_0.3.2.md#post-release-source-fixes--14-november-2026).
 
 ## Version 0.3.2 candidate — 13 November 2026
 

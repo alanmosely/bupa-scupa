@@ -388,10 +388,8 @@ export function spreadsheetCsv(rows) {
   );
   return '\ufeff' + toCsv(safe, HEADERS);
 }
-export function exportCsv(file, query = {}) {
-  if (!path.isAbsolute(file))
-    throw new ScupaError('INVALID_INPUT', 'The export path must be absolute.');
-  const relative = path.relative(DATA, path.resolve(file));
+function assertExportOutsideArchive(file, archive) {
+  const relative = path.relative(archive, file);
   if (
     !relative ||
     (!relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative))
@@ -401,7 +399,18 @@ export function exportCsv(file, query = {}) {
       'Export outside the archive folder to protect the master records.',
     );
   }
-  if (fs.existsSync(file)) throw new ScupaError('FILE_EXISTS', 'Choose a new export filename.');
+}
+export function exportCsv(file, query = {}) {
+  if (!path.isAbsolute(file))
+    throw new ScupaError('INVALID_INPUT', 'The export path must be absolute.');
+  assertExportOutsideArchive(file, DATA);
+  // Resolve junctions before comparing or writing so an alternate archive path
+  // cannot turn an export into a new file inside the archive.
+  const destination = path.join(fs.realpathSync(path.dirname(file)), path.basename(file));
+  const archive = fs.existsSync(DATA) ? fs.realpathSync(DATA) : DATA;
+  assertExportOutsideArchive(destination, archive);
+  if (fs.existsSync(destination))
+    throw new ScupaError('FILE_EXISTS', 'Choose a new export filename.');
   const rows = queryClaims(
     loadMaster(),
     query,
@@ -409,7 +418,7 @@ export function exportCsv(file, query = {}) {
     loadConfig().members,
     pendingClaims().map((item) => item.claim_ref),
   );
-  fs.writeFileSync(file, spreadsheetCsv(rows), { flag: 'wx', mode: 0o600 });
+  fs.writeFileSync(destination, spreadsheetCsv(rows), { flag: 'wx', mode: 0o600 });
   return { file, rows: rows.length };
 }
 

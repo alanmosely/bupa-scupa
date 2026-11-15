@@ -16,7 +16,14 @@ const OLDER_UNSEEN = 'CL000101000003';
 
 function fixture(
   expiry,
-  { unknownMember = false, wrongRecovery = false, cancel = false, olderUnseen = false } = {},
+  {
+    unknownMember = false,
+    wrongRecovery = false,
+    cancel = false,
+    olderUnseen = false,
+    emptyClaims = false,
+    navigationFailure = null,
+  } = {},
 ) {
   saveConfig({
     schemaVersion: 1,
@@ -30,7 +37,7 @@ function fixture(
   atomicWrite(
     MASTER,
     toCsv(
-      (unknownMember ? [REF] : [REF, OTHER]).map((claim_ref, index) => ({
+      (emptyClaims ? [] : unknownMember ? [REF] : [REF, OTHER]).map((claim_ref, index) => ({
         ...Object.fromEntries(HEADERS.map((field) => [field, ''])),
         claim_ref,
         member: index ? 'second' : 'holder',
@@ -60,6 +67,7 @@ function fixture(
     signIns = 0;
   const confirmations = [];
   const detailRequests = [];
+  const navigationFailures = [];
   const page = {
     url: () => url,
     isClosed: () => false,
@@ -69,6 +77,18 @@ function fixture(
       selected = target.searchParams.get('memberid') || 'holder';
       url = target.href;
       loginPage = false;
+      if (
+        navigationFailure &&
+        (!navigationFailure.once || !navigationFailures.length) &&
+        (navigationFailure.initial ? !armed : armed && target.pathname === '/plan')
+      ) {
+        navigationFailures.push(target.pathname);
+        return {
+          status: () => navigationFailure.status,
+          url: () => target.href,
+          headers: () => ({ 'retry-after': navigationFailure.retryAfter }),
+        };
+      }
       if (armed && !expired && expiry === 'navigation' && target.pathname === '/plan') {
         expired = true;
         loginPage = true;
@@ -93,7 +113,11 @@ function fixture(
             return { status: 401, url: BUPA_ORIGIN + argument, html: '' };
           }
           const claimId = selected === 'holder' || (wrongRecovery && signIns) ? REF : OTHER;
-          const refs = claimId === REF && olderUnseen ? [REF, OLDER_UNSEEN] : [claimId];
+          const refs = emptyClaims
+            ? []
+            : claimId === REF && olderUnseen
+              ? [REF, OLDER_UNSEEN]
+              : [claimId];
           return {
             status: 200,
             url: BUPA_ORIGIN + argument,
@@ -135,6 +159,12 @@ function fixture(
         return true;
       },
       emit: (event) => {
+        if (
+          navigationFailure?.cancel &&
+          event.phase === 'download' &&
+          /Waiting/.test(event.message)
+        )
+          controller.abort();
         if (event.phase === 'member' && event.message.includes('Second Person')) {
           armed = true;
           if (expiry === 'between-members') {
@@ -150,6 +180,8 @@ function fixture(
     },
     detailRequests,
     confirmations,
+    navigationFailures,
+    verifyClosed: () => assert.equal(closed, true),
     verify() {
       assert.equal(expired, true);
       assert.equal(signIns, 1);
@@ -159,6 +191,77 @@ function fixture(
     },
   };
 }
+
+test('page navigation respects long server cooldowns during initial login and member selection', async () => {
+  for (const initial of [true, false]) {
+    for (const status of [429, 503]) {
+      const trial = fixture(null, { navigationFailure: { initial, status, retryAfter: '120' } });
+      await assert.rejects(fetchHousehold(trial.options), {
+        code: status === 429 ? 'BUPA_RATE_LIMITED' : 'BUPA_REQUEST_FAILED',
+        retryAfterMs: 120000,
+      });
+      assert.equal(trial.navigationFailures.length, 1);
+      trial.verifyClosed();
+    }
+  }
+});
+
+test('a page navigation cooldown remains cancellable', async () => {
+  const trial = fixture(null, {
+    navigationFailure: { initial: true, status: 429, retryAfter: '10', cancel: true },
+  });
+  await assert.rejects(fetchHousehold(trial.options), { code: 'CANCELLED' });
+  assert.equal(trial.navigationFailures.length, 1);
+  trial.verifyClosed();
+});
+
+test('a temporary navigation failure retries and restores the selected member', async () => {
+  const trial = fixture(null, {
+    navigationFailure: { initial: false, status: 503, retryAfter: '0.01', once: true },
+  });
+  const result = await fetchHousehold(trial.options);
+  assert.deepEqual(
+    result.map((member) => member.claims),
+    [1, 1],
+  );
+  assert.deepEqual(trial.navigationFailures, ['/plan']);
+  assert.deepEqual(trial.detailRequests, [REF, OTHER]);
+  trial.verifyClosed();
+});
+
+test('sync refuses linked raw and member ancestors before writing claim files', async () => {
+  for (const linked of [RAW, path.join(RAW, 'holder')]) {
+    const trial = fixture(null);
+    fs.mkdirSync(linked, { recursive: true });
+    const preserved = linked + '-junction-test';
+    fs.renameSync(linked, preserved);
+    try {
+      fs.symlinkSync(preserved, linked, process.platform === 'win32' ? 'junction' : 'dir');
+      await assert.rejects(fetchHousehold(trial.options), /Linked download folders/);
+      trial.verifyClosed();
+    } finally {
+      if (fs.lstatSync(linked, { throwIfNoEntry: false })?.isSymbolicLink()) fs.unlinkSync(linked);
+      fs.renameSync(preserved, linked);
+    }
+  }
+});
+
+test('zero-claim sync refuses linked ancestors before writing the member manifest', async () => {
+  for (const linked of [RAW, path.join(RAW, 'holder')]) {
+    const trial = fixture(null, { emptyClaims: true });
+    fs.mkdirSync(linked, { recursive: true });
+    const preserved = linked + '-empty-junction-test';
+    fs.renameSync(linked, preserved);
+    try {
+      fs.symlinkSync(preserved, linked, process.platform === 'win32' ? 'junction' : 'dir');
+      await assert.rejects(fetchHousehold(trial.options), /Linked download folders/);
+      trial.verifyClosed();
+    } finally {
+      if (fs.lstatSync(linked, { throwIfNoEntry: false })?.isSymbolicLink()) fs.unlinkSync(linked);
+      fs.renameSync(preserved, linked);
+    }
+  }
+});
 
 for (const expiry of ['between-members', 'selected-list', 'navigation', 'confirmation'])
   test(`manual session recovery restores the member after expiry at ${expiry}`, async () => {
