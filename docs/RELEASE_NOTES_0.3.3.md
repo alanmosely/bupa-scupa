@@ -21,6 +21,10 @@ cannot be written after claims have already been saved.
   boundaries, including during downloads and zero-claim manifest updates.
 - Member-page navigation retries HTTP 429 and temporary server errors, respects
   server cooldowns and remains cancellable. Login and MFA stay manual.
+- Simultaneous portable launches now reserve separate extraction directories
+  for their full lifetimes. This prevents one launch from overwriting or removing
+  another launch's application files. The EXE remains portable and needs no
+  installation or administrator permission.
 
 ## Upgrade and recovery
 

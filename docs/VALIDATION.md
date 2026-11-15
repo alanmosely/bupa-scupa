@@ -9,8 +9,14 @@ extraction and FFmpeg source required, source checks and both development deskto
 smokes, as recorded below. The earlier independent recovery review also verified
 seven synthetic interruption and write-error scenarios without duplicate claims.
 
-Release preparation changes metadata and documentation on top of that integrated
-source. Its final artifacts must pass the complete Windows validation workflow,
+Release preparation also fixes a desktop-test refresh race and a reproduced
+portable launcher directory collision. Two simultaneous NSIS processes received
+the same plugin directory and interfered with extraction before the application
+could start. The source-owned launcher keeps an exclusive temporary reservation
+through the child lifetime and avoids the vulnerable plugin-directory allocation.
+These launcher changes require fresh packaged and concurrent-launch validation.
+
+The final artifacts must pass the complete Windows validation workflow,
 including desktop and synthetic portal checks, packaged and portable agents,
 startup, cancellation, overlapping portable invocations and exact release-content
 checks. The published release links its final workflow and checksum manifest.

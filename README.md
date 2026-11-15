@@ -46,6 +46,7 @@ recovers that report without importing the same claims again.
 Statement parsing keeps padded claim headings separate and refuses malformed
 amounts or inconsistent conversion totals. Member-page navigation uses
 cancellable retries, and linked files or folders cannot bypass archive boundaries.
+Concurrent portable launches also keep their extracted application files separate.
 
 Back up the entire archive and close SCUPA before replacing the application.
 Older recovery guards without owner information still require the documented
