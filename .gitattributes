@@ -13,3 +13,4 @@
 *.ts text eol=lf
 *.yaml text eol=lf
 *.ps1 text eol=crlf
+*.nsi text eol=lf

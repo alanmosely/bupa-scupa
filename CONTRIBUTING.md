@@ -56,6 +56,10 @@ is independent of Bupa; avoid using its logos or suggesting endorsement.
 ## Build
 
 `npm run build` checks the project and creates portable EXE and ZIP distributions.
+The EXE uses the source-owned `scripts/portable.nsi` through electron-builder's
+NSIS target. It remains portable: there are no installation, registry or shortcut
+actions. Keep its exclusive temporary reservation and plugin-free extraction;
+the stock portable launcher can share a temporary runtime between concurrent starts.
 `npm run test:startup` checks concurrent agent startup and exit codes in the
 packaged app (`--development` runs the source version).
 `npm run release:source` creates the reviewed source archive. See

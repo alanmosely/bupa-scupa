@@ -62,6 +62,7 @@ export function checkPublicPath(file) {
   if (
     !top.includes(normal) &&
     normal !== 'docs/images/dashboard.png' &&
+    normal !== 'scripts/portable.nsi' &&
     (!roots.includes(normal.split('/')[0]) ||
       !/\.(?:js|cjs|d\.ts|md|json|yml|yaml|html|css|svg|ico|ps1)$/.test(normal))
   ) {
@@ -132,10 +133,30 @@ export function checkProject(root = process.cwd()) {
     if (!fs.existsSync(path.join(root, required)))
       throw new Error('Missing public project file: ' + required);
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  if (pkg.build.portable?.unpackDirName !== true)
-    throw new Error('Portable launches must use separate per-process extraction folders.');
-  if (pkg.build.portable?.artifactName !== 'bupa-scupa-x64.exe')
+  if (
+    pkg.build.nsis?.script !== 'scripts/portable.nsi' ||
+    pkg.build.nsis?.perMachine !== false ||
+    pkg.build.nsis?.packElevateHelper !== false ||
+    pkg.build.nsis?.differentialPackage !== false ||
+    pkg.build.portable ||
+    JSON.stringify(pkg.build.win.target) !== JSON.stringify(['nsis', 'zip']) ||
+    !pkg.scripts.build.includes('electron-builder --win nsis zip --x64 --publish never') ||
+    pkg.build.directories.output !== 'dist'
+  )
+    throw new Error('Build the source-owned, user-level portable launcher and x64 ZIP.');
+  if (pkg.build.nsis?.artifactName !== 'bupa-scupa-x64.exe')
     throw new Error('Build one portable EXE with the permanent download filename.');
+  const launcher = fs.readFileSync(path.join(root, 'scripts/portable.nsi'), 'utf8');
+  const launcherCode = launcher.replace(/;[^\r\n]*/g, '');
+  if (
+    /\b(?:InitPluginsDir|CallInstDLL|WriteReg\w*|WriteUninstaller|CreateShortcut)\b|\w+::/i.test(
+      launcherCode,
+    ) ||
+    !/^RequestExecutionLevel user$/m.test(launcherCode) ||
+    !/^\s*GetTempFileName \$reservation$/m.test(launcherCode) ||
+    !/^\s*File \/r "\$\{PROJECT_DIR\}\\dist\\win-unpacked\\\*\.\*"$/m.test(launcherCode)
+  )
+    throw new Error('Portable extraction must retain its reservation and avoid NSIS plugins.');
   if (pkg.build.files.some((f) => /data|private|\.cache|\*\*\/\*/.test(f) && f !== 'src/**/*'))
     throw new Error('Review the desktop packaging allowlist.');
   console.log(

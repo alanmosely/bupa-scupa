@@ -1,5 +1,31 @@
 # Validation
 
+## Version 0.3.3 release preparation — 15 November 2026
+
+This release combines the archive lock-recovery and pending-report fixes from
+PR 24 with the statement-validation, portal-retry and archive-boundary fixes in
+commit `21f3644`. The integrated source passed all 143 automated tests with PDF
+extraction and FFmpeg source required, source checks and both development desktop
+smokes, as recorded below. The earlier independent recovery review also verified
+seven synthetic interruption and write-error scenarios without duplicate claims.
+
+Release preparation also fixes a desktop-test refresh race and a reproduced
+portable launcher directory collision. Two simultaneous NSIS processes received
+the same plugin directory and interfered with extraction before the application
+could start. The source-owned launcher keeps an exclusive temporary reservation
+through the child lifetime and avoids the vulnerable plugin-directory allocation.
+These launcher changes require fresh packaged and concurrent-launch validation.
+
+The final artifacts must pass the complete Windows validation workflow,
+including desktop and synthetic portal checks, packaged and portable agents,
+startup, cancellation, overlapping portable invocations and exact release-content
+checks. The published release links its final workflow and checksum manifest.
+
+The maintainer authorised publication of these fixes on 15 November with the
+previously disclosed live-sync limitation still outstanding. No fresh packaged
+live household sync or fresh-machine check is claimed. Binaries remain unsigned.
+See the [release and upgrade notes](RELEASE_NOTES_0.3.3.md).
+
 ## Integrated source checks — 15 November 2026
 
 The follow-up fixes were combined with the upstream archive-lock and pending

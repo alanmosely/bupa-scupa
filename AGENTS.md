@@ -34,6 +34,11 @@ AGENT_API.md and use the supported API rather than editing records directly.
   against docs/RELEASE.md. Build artifacts and caches are ignored.
 - Electron updates must include matching FFmpeg source and DLL pins in
   vendor-lock.json. Preserve resources/ffmpeg and follow docs/FFMPEG.md.
+- The portable EXE uses the source-owned `scripts/portable.nsi` through the NSIS
+  target. Its retained temporary-file reservation protects each runtime. Do not
+  restore the stock portable target or plugin-directory allocation: concurrent
+  launches reproduced shared extraction and native crashes. Keep the launcher
+  plugin-free and retain the packaged startup and portable concurrency checks.
 - No agent delegation is needed for normal contributions.
 
 ## Portal conventions

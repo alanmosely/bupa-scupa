@@ -211,6 +211,7 @@ try {
   await page.screenshot({ path: path.join(screenshots, 'changes.png'), fullPage: true });
   await page.locator('#reparse').click();
   await page.getByText('Done. 0 claims added, 0 updated.').waitFor();
+  await page.waitForFunction(() => !document.getElementById('reparse').disabled);
   assert.equal(await page.locator('#changes').isVisible(), false, 'No-op clears previous changes');
   await app.evaluate(() => {
     globalThis.reviewAnswer = 0;
@@ -223,9 +224,12 @@ try {
   const masterBeforeReview = fs.readFileSync(path.join(archive, 'master', 'claims.csv'));
   await page.locator('#reparse').click();
   await page.getByText('1 claim needs attention.', { exact: false }).waitFor();
+  // The completion message precedes the refreshed claim snapshot.
+  await page.waitForFunction(() => !document.getElementById('reparse').disabled);
   assert.equal(await page.locator('#claims tr').count(), 2, 'Other claims remain visible');
   await page.locator('#attention-tab').click();
-  assert.match(await page.locator('#claims').textContent(), /Statement needs attention/);
+  const pendingRow = page.locator('#claims tr').filter({ hasText: REF });
+  assert.match(await pendingRow.textContent(), /Statement needs attention/);
   await page.locator('.archive-settings summary').click();
   await page.screenshot({ path: path.join(screenshots, 'partial-import.png'), fullPage: true });
   await page.locator('.archive-settings summary').click();

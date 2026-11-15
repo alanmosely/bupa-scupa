@@ -58,11 +58,15 @@ a new worker with its selected archive in the environment; each CLI invocation
 uses one archive. Do not reuse a loaded core module to switch archives in-process.
 The renderer cannot choose arbitrary executable paths or access Node APIs.
 
-Keep electron-builder's `portable.unpackDirName` set to `true`. In the pinned
-builder, `false` creates one directory name per build, shared by launches; NSIS
-removes that directory on startup and exit. `true` uses NSIS's unique per-process
-plugin directory. Overlapping GUI and agent launches must not remove one
-another's runtime. Archive locks still protect concurrent writers.
+The portable EXE is built through electron-builder's supported `nsis.script`
+option using `scripts/portable.nsi`. Its native temporary-file reservation remains
+present while a private sibling directory holds the extracted application and
+until cleanup succeeds. A pre-existing directory is never adopted or removed.
+The script uses native file extraction and command execution without NSIS plugins,
+installer actions, registry writes or elevation. Do not restore the stock portable
+target: even `unpackDirName: true` reproduced a race in NSIS's plugin-directory
+allocation, letting simultaneous launches overwrite or remove the same runtime.
+Archive locks still protect concurrent writers independently of launcher isolation.
 
 Member IDs are permanent. Name corrections update display names and back up the
 household settings; existing references must still pass ownership checks, and
@@ -71,7 +75,8 @@ the human must reconfirm the corrected member. This is not a member transfer API
 Writers acquire an exclusive `.scupa-lock`. Recovery acquires `.scupa-recovery`;
 writers check that guard before and after lock acquisition. Recovery removes a
 lock only if its PID is confirmed absent. Permission errors, malformed locks and
-PID reuse fail closed. An interrupted recovery guard requires manual inspection.
+PID reuse fail closed. New recovery guards can be retried after their owner stops;
+legacy ownerless or unreadable guards still require manual recovery.
 
 Agent output/event files are reserved before mutation and must be outside the
 archive. Responses may contain health data; progress events contain control state

@@ -18,8 +18,11 @@ the request before any archive changes. A reserved response is empty while the
 request runs; wait for the process to finish, or retry parsing until valid JSON
 is available. If a process crashes, use a new filename for a new invocation.
 Keep response files outside the health archive and treat them as private. The
-portable launcher's process exit status may be less informative than its JSON
-response; check `ok` and `error.code`. Unpacked releases can invoke
+portable launcher preserves the application's exit status; check the JSON
+`ok` and `error.code` fields for details. A failure before the application starts
+does not produce a JSON response: launcher exit code `122` means temporary
+runtime allocation failed, `123` means extraction failed, and `124` means the
+application could not be launched. Unpacked releases can invoke
 `"BUPA SCUPA.exe" --agent ...` directly. The NSIS launcher may not forward stdout
 to every parent shell, so `--output` is the reliable contract on Windows.
 

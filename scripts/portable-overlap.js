@@ -6,7 +6,8 @@ import { spawn } from 'node:child_process';
 import { setInterval, clearInterval } from 'node:timers';
 
 fs.mkdirSync('.cache/portable-overlap', { recursive: true });
-const root = fs.mkdtempSync(path.resolve('.cache/portable-overlap/run-'));
+// Exercise the quoted executable, archive and response paths in the launcher.
+const root = fs.mkdtempSync(path.resolve('.cache/portable-overlap/run with spaces-'));
 const exe = path.resolve('dist/bupa-scupa-x64.exe');
 const temp = path.join(root, 'temp');
 fs.mkdirSync(temp);

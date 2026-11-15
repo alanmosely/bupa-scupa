@@ -36,23 +36,22 @@ additional sorting. You can also sort with the column headings. The **Views** me
 lets you save and reuse these settings for this archive.
 **Export shown claims** exports the current results in the same order.
 
-## Version 0.3.2
+## Version 0.3.3
 
-Normal sync now checks every claim missing from the verified member's archive,
-even when it predates the 14-day overlap. This patch keeps the last verified
-assessment when Bupa temporarily has no statement, excludes incomplete downloads
-from assessments and uses final amounts for multi-invoice reassessments.
+Interrupted archive recovery can be retried after its owner has stopped. If a
+change report cannot be written after claims are saved, SCUPA now confirms the
+saved changes and retains the report for a later retry. Rechecking saved PDFs
+recovers that report without importing the same claims again.
 
-Recognised Bupa statements import automatically. Interrupted PDF downloads can
-resume for 24 hours, and only documents needing attention are held back.
-The binaries are unsigned, and a fresh packaged live sync remains outstanding.
-See the [release notes](https://github.com/alanmosely/bupa-scupa/releases/tag/v0.3.2).
+Statement parsing keeps padded claim headings separate and refuses malformed
+amounts or inconsistent conversion totals. Member-page navigation uses
+cancellable retries, and linked files or folders cannot bypass archive boundaries.
+Concurrent portable launches also keep their extracted application files separate.
 
-Version-specific downloads:
-[Portable EXE](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.2/bupa-scupa-x64.exe),
-[Application ZIP](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.2/bupa-scupa-0.3.2-x64.zip),
-[Corresponding source](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.2/bupa-scupa-0.3.2-source.zip),
-and [SHA-256 checksums](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.2/SHA256SUMS.txt).
+Back up the entire archive and close SCUPA before replacing the application.
+Older recovery guards without owner information still require the documented
+manual recovery. The binaries are unsigned, and a fresh packaged live sync
+remains outstanding. See the [release and upgrade notes](docs/RELEASE_NOTES_0.3.3.md).
 
 ## Updating an existing archive
 
