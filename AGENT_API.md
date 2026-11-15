@@ -6,7 +6,7 @@ any agent or ordinary script and has no model provider dependency or token cost.
 ## Portable Windows executable
 
 ```powershell
-$run = Start-Process -FilePath '.\bupa-scupa-0.1.0-x64.exe' -ArgumentList '--agent status --data-dir "D:\PrivateArchive" --output "D:\Automation\status.json"' -PassThru -Wait
+$run = Start-Process -FilePath '.\bupa-scupa-x64.exe' -ArgumentList '--agent status --data-dir "D:\PrivateArchive" --output "D:\Automation\status.json"' -PassThru -Wait
 Get-Content 'D:\Automation\status.json' -Raw | ConvertFrom-Json
 ```
 

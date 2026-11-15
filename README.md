@@ -38,6 +38,11 @@ lets you save and reuse these settings for this archive.
 
 ## Version 0.3.3
 
+[Download the 0.3.3 EXE](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.3/bupa-scupa-x64.exe),
+[application ZIP](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.3/bupa-scupa-0.3.3-x64.zip),
+[corresponding source](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.3/bupa-scupa-0.3.3-source.zip)
+or [SHA-256 checksums](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.3/SHA256SUMS.txt).
+
 Interrupted archive recovery can be retried after its owner has stopped. If a
 change report cannot be written after claims are saved, SCUPA now confirms the
 saved changes and retains the report for a later retry. Rechecking saved PDFs

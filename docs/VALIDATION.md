@@ -1,6 +1,28 @@
 # Validation
 
-## Version 0.3.3 release preparation — 15 November 2026
+## Version 0.3.3 release — 15 November 2026
+
+[Version 0.3.3](https://github.com/alanmosely/bupa-scupa/releases/tag/v0.3.3)
+is published from merge commit `04c082697a160af1c203b7c38dd018ba346a269c`,
+whose tree exactly matches the tested candidate `d9bd826`.
+The [full Windows workflow](https://github.com/alanmosely/bupa-scupa/actions/runs/43751600679)
+passed on Windows Server 2022 x64: all 143 tests, zero skips, required PDF/FFmpeg
+source checks, desktop and synthetic portal checks, packaged/portable agents,
+128 startup invocations, cancellation, concurrent portable launches and exact
+release-content checks. The merge-commit source checks also passed.
+
+An independent build on Windows 11 x64, build 26300, passed the same 143 tests,
+packaged desktop, unpacked startup, extracted/portable agents, cancellation,
+three concurrent portable pairs with no remaining temporary files, and release
+checks. All four uploaded assets matched the final CI files and their SHA-256
+digests. The permanent EXE link resolves to 0.3.3.
+
+The corresponding source contains the reviewed Git files with Windows checkout
+line endings and the build-generated icon. Its seven icon images match both
+executables and the packaged app. Runtime source, dependency pins, Xpdf/FFmpeg
+provenance and license materials passed independent artifact inspection.
+
+The following preparation notes preserve the qualification history.
 
 This release combines the archive lock-recovery and pending-report fixes from
 PR 24 with the statement-validation, portal-retry and archive-boundary fixes in
@@ -14,9 +36,9 @@ portable launcher directory collision. Two simultaneous NSIS processes received
 the same plugin directory and interfered with extraction before the application
 could start. The source-owned launcher keeps an exclusive temporary reservation
 through the child lifetime and avoids the vulnerable plugin-directory allocation.
-These launcher changes require fresh packaged and concurrent-launch validation.
+The fresh packaged and concurrent-launch validation passed as recorded above.
 
-The final artifacts must pass the complete Windows validation workflow,
+The final artifacts passed the complete Windows validation workflow,
 including desktop and synthetic portal checks, packaged and portable agents,
 startup, cancellation, overlapping portable invocations and exact release-content
 checks. The published release links its final workflow and checksum manifest.

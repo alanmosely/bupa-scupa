@@ -52,20 +52,28 @@ preserved; do not guess amounts or statuses to bypass a validation error.
 
 ## Release assets
 
-- `bupa-scupa-x64.exe`: portable application.
-- `bupa-scupa-0.3.3-x64.zip`: extracted application, recommended for repeated agent use.
-- `bupa-scupa-0.3.3-source.zip`: corresponding application source.
-- `SHA256SUMS.txt`: SHA-256 checksums for the three downloads.
+- [bupa-scupa-x64.exe](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.3/bupa-scupa-x64.exe): portable application.
+- [bupa-scupa-0.3.3-x64.zip](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.3/bupa-scupa-0.3.3-x64.zip): extracted application, recommended for repeated agent use.
+- [bupa-scupa-0.3.3-source.zip](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.3/bupa-scupa-0.3.3-source.zip): corresponding application source.
+- [SHA256SUMS.txt](https://github.com/alanmosely/bupa-scupa/releases/download/v0.3.3/SHA256SUMS.txt): SHA-256 checksums for the three downloads.
 
 ## Validation and limits
 
-The combined fixes passed 143 automated tests with PDF extraction and FFmpeg
-source checks required, source checks and both development desktop smokes.
-Independent synthetic fault tests also verified seven process-interruption and
-write-failure scenarios for the report journal. The versioned release artifacts
-require the complete Windows build, synthetic portal checks, packaged and
-portable agent checks, and release-artifact validation; the release's GitHub
-Actions run records the final result.
+The [complete Windows release workflow](https://github.com/alanmosely/bupa-scupa/actions/runs/43751600679)
+passed on Windows Server 2022 x64: all 143 tests with PDF extraction and FFmpeg
+source checks required, zero skips, source checks, desktop and synthetic portal
+tests, packaged/portable agents, 128 startup invocations, cancellation, concurrent
+portable launches, and exact source/binary release checks. The merged commit has
+the same source tree and its
+[source checks](https://github.com/alanmosely/bupa-scupa/actions/runs/43753150145)
+also passed.
+
+An independent build passed on Windows 11 x64, build 26300, including all 143
+tests, packaged desktop, startup, extracted/portable agents, cancellation, three
+concurrent portable pairs with complete temporary-directory cleanup, and
+release-content verification. Seven independent report-journal fault scenarios
+and native launcher argument, error and concurrency tests also passed. A fresh
+dependency audit reported zero vulnerabilities.
 
 Dependencies, bundled runtime and PDF reader versions, source pins and notices
 are unchanged. The Windows binaries are unsigned. A fresh Windows installation
