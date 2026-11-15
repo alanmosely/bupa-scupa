@@ -167,6 +167,19 @@ test('personal notes persist without changing the master or its CSV export', () 
   );
 });
 
+test('CSV exports reject archive junctions and still allow external destinations', () => {
+  const container = fs.mkdtempSync(path.resolve('.cache/tests/export-boundary-'));
+  const alias = path.join(container, 'archive-alias');
+  fs.symlinkSync(util.DATA, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const before = fs.readFileSync(util.MASTER);
+  assert.throws(() => service.exportCsv(path.join(alias, 'export.csv')), { code: 'INVALID_INPUT' });
+  assert.equal(fs.existsSync(path.join(util.DATA, 'export.csv')), false);
+  assert.deepEqual(fs.readFileSync(util.MASTER), before);
+  const external = path.join(container, 'external.csv');
+  assert.equal(service.exportCsv(external).file, external);
+  assert.equal(parseCsv(fs.readFileSync(external, 'utf8')).length, rows.length);
+});
+
 test('an older claim drawer cannot mark a changed assessment reviewed', () => {
   const masterBefore = fs.readFileSync(util.MASTER);
   const workspaceFile = path.join(util.DATA, 'workspace.json');

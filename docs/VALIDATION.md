@@ -1,5 +1,42 @@
 # Validation
 
+## Integrated source checks — 15 November 2026
+
+The follow-up fixes were combined with the upstream archive-lock and pending
+change-report recovery changes. All 143 automated tests passed on Windows 11
+x64 with PDF extraction and FFmpeg source checks required, with no skipped tests.
+Source and staged-file privacy checks, lint, types, formatting, and both
+development desktop smoke suites passed using synthetic archives.
+
+This validates the combined source. No new binaries were built or published for
+this integration. The earlier packaged checks below apply to their dated source
+snapshots. Fresh-machine and live end-to-end household acceptance remain untested.
+
+## Local follow-up checks — 14 November 2026, before integration
+
+All 139 automated tests passed on Windows 11 x64, build 26300, with PDF extraction
+and FFmpeg source checks required and no skipped tests. This evidence applies to
+the local follow-up source and binaries before integration with the later upstream
+archive-lock and report-recovery changes. It does not describe the published
+0.3.2 downloads or validate the combined source after integration.
+
+The follow-up review adds regressions for padded or invalid claim headings,
+malformed claimed amounts and conversion summaries, missing assessed amounts,
+invalid master statuses, navigation cooldowns and cancellation, and linked
+archive paths. Linked-folder checks cover parsing, CSV export, downloads and
+zero-claim manifest writes. The existing incremental sync, statement recovery,
+reassessment, receipt review and cross-member ownership regressions also passed.
+
+The development and packaged desktop, synthetic portal, native agent startup,
+extracted and portable agent, and cancellation checks passed. Three pairs of
+concurrent portable launches used separate runtime folders. The source and
+application ZIPs, bundled notices, PDF reader and FFmpeg provenance, and release
+checksums passed local release inspection. The dependency audit reported zero
+vulnerabilities. These local artifacts were not published.
+
+No fresh-machine or live end-to-end sync was performed. The local Windows
+binaries are unsigned. See the [post-release source fixes](RELEASE_NOTES_0.3.2.md#post-release-source-fixes--14-november-2026).
+
 ## Version 0.3.2 candidate — 13 November 2026
 
 All 127 automated tests pass on Windows 11 x64, build 26300, with PDF extraction

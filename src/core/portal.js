@@ -34,6 +34,15 @@ const check = (signal) => {
   if (signal?.aborted)
     throw new ScupaError('CANCELLED', 'Sync cancelled. Downloaded PDFs have been kept.');
 };
+function ensureMemberDirectory(memberId) {
+  const directory = path.join(RAW, memberId);
+  for (const ancestor of [RAW, directory]) {
+    if (fs.lstatSync(ancestor, { throwIfNoEntry: false })?.isSymbolicLink())
+      throw new Error('Linked download folders are not supported.');
+  }
+  ensureDir(directory);
+  return directory;
+}
 async function checkPageSession(page, request) {
   validatePortalResponse(
     {
@@ -154,6 +163,20 @@ async function links(page) {
     })),
   );
 }
+async function openPortalPage(page, href) {
+  const response = await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  // Navigation can be rate-limited independently of the claims API. Successful
+  // redirects remain available for the human to complete login and MFA.
+  if (response && response.status() >= 400)
+    validatePortalResponse(
+      {
+        status: response.status(),
+        url: response.url(),
+        retryAfter: response.headers()['retry-after'],
+      },
+      'page navigation',
+    );
+}
 /** @param {string | null} [memberId] */
 async function navigate(page, needle, memberId = null) {
   const href = resolveNavigationHref(await links(page), needle, ORIGIN, memberId);
@@ -162,24 +185,22 @@ async function navigate(page, needle, memberId = null) {
       'PORTAL_CHANGED',
       'Bupa navigation has changed. No claims have been imported.',
     );
-  await page.goto(new URL(href, ORIGIN).href, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await openPortalPage(page, new URL(href, ORIGIN).href);
   await pause(800);
 }
 async function selectMember(page, member) {
-  await page.goto(ORIGIN + '/my-claims', { waitUntil: 'domcontentloaded' });
+  await openPortalPage(page, ORIGIN + '/my-claims');
   await navigate(page, '/plan');
   const overview = resolveNavigationHref(await links(page), '/plan/dependants', ORIGIN);
   if (overview) {
-    await page.goto(new URL(overview, ORIGIN).href, { waitUntil: 'domcontentloaded' });
+    await openPortalPage(page, new URL(overview, ORIGIN).href);
     await pause(800);
   }
   const memberHref = uniqueMemberHref(await links(page), member.displayName);
   const ids = [...new URL(memberHref).searchParams].filter(([key]) => /^memberid$/i.test(key));
   if (ids.length > 1 || (ids.length === 1 && !ids[0][1]))
     throw new ScupaError('PORTAL_CHANGED', 'Bupa returned an ambiguous member link.');
-  await page.goto(memberHref, {
-    waitUntil: 'domcontentloaded',
-  });
+  await openPortalPage(page, memberHref);
   await pause(800);
   // Global desktop/mobile claims links return to the holder. Use the claims
   // link carrying the ID from the uniquely identified dependant card instead.
@@ -442,7 +463,11 @@ export async function fetchHousehold({
         ? 'Full refresh: sign in to Bupa, including MFA. All available claims will be checked. Keep the browser open.'
         : 'Sign in to Bupa in the browser window, including MFA. Keep it open.',
     });
-    await page.goto(ORIGIN + '/my-claims', { waitUntil: 'domcontentloaded' }).catch(() => {});
+    await retry(() => openPortalPage(page, ORIGIN + '/my-claims'), { signal, onRetry }).catch(
+      (error) => {
+        if (error.code === 'BUPA_RATE_LIMITED' || error.code === 'BUPA_REQUEST_FAILED') throw error;
+      },
+    );
     await waitForLogin(page, signal, onRetry);
     const discovered = !Object.keys(cfg.members).length;
     if (discovered) {
@@ -478,7 +503,6 @@ export async function fetchHousehold({
       // Selection, verification and confirmation can expire just like downloads.
       // Always restore and verify this member before retrying any operation.
       /** @template T @param {() => Promise<T>} operation @param {string | null} [claimId] */
-      /** @template T @param {() => Promise<T>} operation @param {string | null} [claimId] */
       const request = async (operation, claimId = null) => {
         const attempt = () =>
           retry(operation, {
@@ -498,7 +522,11 @@ export async function fetchHousehold({
               'Bupa signed you out. Sign in again, including MFA, in the same browser. Sync will resume after your member is verified.',
           });
           check(signal);
-          await page.goto(ORIGIN + '/my-claims', { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await retry(() => openPortalPage(page, ORIGIN + '/my-claims'), { signal, onRetry }).catch(
+            (error) => {
+              if (error.code !== 'SESSION_EXPIRED') throw error;
+            },
+          );
           await waitForLogin(page, signal, onRetry);
           if (!member.self) await selectMember(page, member);
           const resumed = await retry(() => portalList(page), { signal });
@@ -518,8 +546,7 @@ export async function fetchHousehold({
       };
       // Discovery ends on the dependants overview, where the claims API may
       // return an empty response. Open the actual holder's claims page first.
-      if (member.self)
-        await page.goto(ORIGIN + '/my-claims', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      if (member.self) await request(() => openPortalPage(page, ORIGIN + '/my-claims'));
       const current = await request(() => portalList(page));
       const alreadySelected =
         byMember[id]?.size && current.some((c) => byMember[id].has(c.claimId));
@@ -578,7 +605,7 @@ export async function fetchHousehold({
           total: selected.length,
         });
         const attachmentsFound = await request(() => attachments(page, claim), claim.claimId);
-        const directory = path.join(RAW, id, claim.claimId);
+        const directory = path.join(ensureMemberDirectory(id), claim.claimId);
         ensureDir(directory);
         if (fs.lstatSync(directory).isSymbolicLink())
           throw new Error('Linked download folders are not supported.');
@@ -680,8 +707,8 @@ export async function fetchHousehold({
         atomicWrite(current, JSON.stringify({ schemaVersion: 1, files: saved }, null, 2));
         manifest.claims.push({ ...claim, files: saved });
       }
-      ensureDir(path.join(RAW, id));
-      atomicWrite(path.join(RAW, id, 'manifest.json'), JSON.stringify(manifest, null, 2));
+      const memberDirectory = ensureMemberDirectory(id);
+      atomicWrite(path.join(memberDirectory, 'manifest.json'), JSON.stringify(manifest, null, 2));
       summaries.push({ member: id, claims: selected.length });
     }
     return summaries;

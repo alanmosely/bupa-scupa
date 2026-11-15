@@ -30,8 +30,25 @@ const REASON_LINE = /unable to pay|won't pay|we cannot pay|cancelled\s*\/\s*reje
 const LIMIT_REASON = /paid the maximum allowed|adjusted this claim to reduce/i;
 const INVOICE_HEADING = /^\s*For\s+treatment\s+at\s+([\s\S]+?)\s*\(provider\s+invoice\s+([^)]+)\)/i;
 const ADJUSTMENT_TOTAL = /Total\s+adjustment\s+payment\s+made\b/gi;
+const CLAIM_HEADING = /\bFor\s+Claim\s+(CL\d{12})\b/gi;
 const matchesCurrency = (amount, currency) =>
   (!amount.includes('£') || currency === 'GBP') && (!amount.includes('€') || currency === 'EUR');
+
+function conversionPaymentAgrees(text, currency, paid) {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => /^\s*Payment\s+amount\b/i.test(line))
+    .every((line) => {
+      const payment = /^\s*Payment\s+amount\s+(GBP|EUR)\s+(.+?)\s*$/i.exec(line);
+      return (
+        payment &&
+        payment[1].toUpperCase() === currency &&
+        AMOUNT_CELL.test(payment[2]) &&
+        matchesCurrency(payment[2], currency) &&
+        Math.abs(parseMoney(payment[2]) - Number(paid)) <= 0.005
+      );
+    });
+}
 
 function statementCurrencies(header, segment, errors) {
   const evidence = header + '\n' + segment;
@@ -186,16 +203,23 @@ function sharedPaymentDate(text) {
 
 export function parseStatementText(rawText, member) {
   const text = normQuotes(rawText);
-  const marks = [];
-  const re = /For Claim\s+(CL\d{12})/g;
-  let m;
-  while ((m = re.exec(text))) marks.push({ ref: m[1], idx: m.index });
+  const marks = [...text.matchAll(CLAIM_HEADING)].map((match) => ({
+    ref: match[1].toUpperCase(),
+    idx: match.index,
+  }));
   if (!marks.length) return [];
+  const invalidHeading = [...text.matchAll(/\bFor\s+Claim\b/gi)].length !== marks.length;
 
   const records = [];
   for (let i = 0; i < marks.length; i++) {
     const seg = text.slice(marks[i].idx, marks[i + 1] ? marks[i + 1].idx : undefined);
-    records.push(parseClaimSegment(seg, marks[i].ref, member, text, marks.length));
+    const record = parseClaimSegment(seg, marks[i].ref, member, text, marks.length);
+    if (invalidHeading)
+      record.errors.push({
+        code: 'INVALID_CLAIM_REFERENCE',
+        message: 'a claim heading has an invalid reference — review the whole statement',
+      });
+    records.push(record);
   }
   return records;
 }
@@ -308,11 +332,7 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
     if (
       nClaims === 1 &&
       first.currency !== first.paid_currency &&
-      [...fullText.matchAll(/^\s*Payment amount\s+(GBP|EUR)\s+(-?\d[\d,]*\.\d{2})\s*$/gim)].some(
-        (payment) =>
-          payment[1].toUpperCase() !== first.paid_currency ||
-          Math.abs(parseMoney(payment[2]) - Number(paid)) > 0.005,
-      )
+      !conversionPaymentAgrees(fullText, first.paid_currency, paid)
     )
       invoiceErrors.push({
         code: 'INVALID_CONVERSION_TOTAL',
@@ -358,7 +378,7 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
     };
   }
   const currencies = statementCurrencies(
-    fullText.slice(0, fullText.indexOf('For Claim')),
+    fullText.slice(0, fullText.search(/\bFor\s+Claim\b/i)),
     assessment,
     errors,
   );
@@ -388,7 +408,11 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
           ))) ||
       cells.length < 2 ||
       !/^\d{2}\/\d{2}\/\d{4}$/.test(cells[0]) ||
-      cells.slice(1).some((cell) => /(?:^|\s)-?[£€]?\s?\d[\d,]*\.\d+(?:\s|$)/.test(cell))
+      cells
+        .slice(1)
+        .some((cell) =>
+          /[£€]\s*[-+]?\d|^[-+]?\d[\d,.]*[A-Za-z]*$|(?:^|\s)-?\d[\d,]*\.\d+(?:\s|$)/.test(cell),
+        )
     ) {
       errors.push({
         code: 'UNPARSED_BENEFIT',
@@ -452,22 +476,11 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
         message:
           'conversion total must give both amounts in their labelled currencies — review manually',
       });
-    if (converted && nClaims === 1) {
-      const payments = [
-        ...fullText.matchAll(/^\s*Payment amount\s+(GBP|EUR)\s+(-?\d[\d,]*\.\d{2})\s*$/gim),
-      ];
-      if (
-        payments.some(
-          (payment) =>
-            payment[1].toUpperCase() !== currencies.paid ||
-            Math.abs(parseMoney(payment[2]) - paid) > 0.005,
-        )
-      )
-        errors.push({
-          code: 'INVALID_CONVERSION_TOTAL',
-          message: 'conversion payment disagrees with the statement total — review manually',
-        });
-    }
+    if (converted && nClaims === 1 && !conversionPaymentAgrees(fullText, currencies.paid, paid))
+      errors.push({
+        code: 'INVALID_CONVERSION_TOTAL',
+        message: 'conversion payment disagrees with the statement total — review manually',
+      });
   }
 
   const isDup = DUP_WORDING.test(assessment.replace(/\s+/g, ' '));
@@ -542,7 +555,7 @@ function parseClaimSegment(seg, ref, member, fullText, nClaims) {
     provider,
     payment_date:
       findPaymentDate(seg) ||
-      findPaymentDate(fullText.slice(0, fullText.indexOf('For Claim'))) ||
+      findPaymentDate(fullText.slice(0, fullText.search(/\bFor\s+Claim\b/i))) ||
       sharedPaymentDate(fullText),
     notes,
     invoice,
@@ -574,10 +587,20 @@ export function parseRawDir({
 
   if (!fs.existsSync(rawDir))
     throw new Error(`nothing to parse: ${rawDir} does not exist — run fetch first`);
-  for (const member of fs.readdirSync(rawDir)) {
+  const archiveDirectory = (directory, label) => {
+    const stat = fs.lstatSync(directory);
+    if (stat.isSymbolicLink()) {
+      const message = `${label}: linked archive directories are not supported — refusing to merge`;
+      stats.errors.push(message);
+      fatalErrors.push(message);
+      return false;
+    }
+    return stat.isDirectory();
+  };
+  for (const member of archiveDirectory(rawDir, 'raw') ? fs.readdirSync(rawDir) : []) {
     checkCancelled();
     const memberDir = path.join(rawDir, member);
-    if (!fs.statSync(memberDir).isDirectory()) continue;
+    if (!archiveDirectory(memberDir, member)) continue;
     if (!Object.hasOwn(cfg.members, member)) {
       stats.errors.push(`Unknown member archive directory: ${member}`);
       fatalErrors.push(stats.errors.at(-1));
@@ -585,7 +608,8 @@ export function parseRawDir({
     }
     for (const claimId of fs.readdirSync(memberDir)) {
       const claimDir = path.join(memberDir, claimId);
-      if (!/^CL\d{12}$/.test(claimId) || !fs.statSync(claimDir).isDirectory()) continue;
+      if (!/^CL\d{12}$/.test(claimId) || !archiveDirectory(claimDir, `${member}/${claimId}`))
+        continue;
       let currentFiles, reviews;
       try {
         currentFiles = currentClaimFiles(claimDir);
@@ -694,7 +718,7 @@ export function parseRawDir({
             `${member}/${claimId}/${f}: statement format is not recognised — refusing to merge`,
           );
           defer(member, claimId);
-          for (const match of text.matchAll(/For\s+Claim\s+(CL\d{12})/g)) defer(member, match[1]);
+          for (const match of text.matchAll(CLAIM_HEADING)) defer(member, match[1].toUpperCase());
         }
         if (parsed.some((rec) => rec.errors.length)) {
           defer(member, claimId);

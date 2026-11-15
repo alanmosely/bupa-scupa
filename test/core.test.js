@@ -41,6 +41,7 @@ const { queryClaims, emptyFollowUp } = await import('../src/core/claims.js');
 const { uniqueMemberHref, selectClaims, downloadPdf, fetchHousehold } =
   await import('../src/core/portal.js');
 const { downloadProgress } = await import('../src/core/download-progress.js');
+const { currentClaimFiles } = await import('../src/core/documents.js');
 const pdfAvailable = fs.existsSync('vendor/xpdf/pdftotext.exe');
 if (process.env.SCUPA_REQUIRE_PDF_TESTS === '1')
   assert.ok(
@@ -856,6 +857,18 @@ test('an older checkpoint without a committed selection cannot supply an assessm
   assert.equal(parse().records[0].paid, '80.0', 'Archives predating checkpoints still parse');
   downloadProgress(directory, [file]).save(file, filename);
   assert.equal(parse().records[0].paid, '');
+});
+
+test('legacy PDF selections refuse nonregular entries and malformed baseline metadata', () => {
+  const directory = folder();
+  fs.mkdirSync(path.join(directory, 'statement_1_demo.pdf'));
+  assert.throws(() => currentClaimFiles(directory), /regular files/);
+  const other = folder();
+  fs.writeFileSync(
+    path.join(other, 'current.json'),
+    JSON.stringify({ schemaVersion: 1, files: [], legacy: 'true' }),
+  );
+  assert.throws(() => currentClaimFiles(other), /current.json/);
 });
 test(
   'current PDF selection follows restored revisions without changing archived files',
