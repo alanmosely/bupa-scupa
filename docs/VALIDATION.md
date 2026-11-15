@@ -1,5 +1,25 @@
 # Validation
 
+## Version 0.3.3 release preparation — 15 November 2026
+
+This release contains the archive lock-recovery and pending-report fixes merged
+in PR 24. The fixed source passed all 131 automated tests with PDF extraction and
+FFmpeg source required, the full Windows packaged validation, and an independent
+review on 14 November. Seven additional synthetic process-interruption and
+write-error scenarios recovered one report per change without duplicate claims.
+
+Compared with merged fix commit `9b34d42`, this release preparation changes only
+metadata and documentation. Its final artifacts
+must pass the full Windows validation workflow, including desktop and synthetic
+portal checks, packaged and portable agents, startup, cancellation, overlapping
+portable invocations and exact release-content checks. The published release
+links its final workflow and checksum manifest.
+
+The maintainer authorised publication of these fixes on 15 November with the
+previously disclosed live-sync limitation still outstanding. No fresh packaged
+live household sync or fresh-machine check is claimed. Binaries remain unsigned.
+See the [release and upgrade notes](RELEASE_NOTES_0.3.3.md).
+
 ## Version 0.3.2 candidate — 13 November 2026
 
 All 127 automated tests pass on Windows 11 x64, build 26300, with PDF extraction
